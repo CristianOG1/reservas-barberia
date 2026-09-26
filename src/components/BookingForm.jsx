@@ -1,4 +1,3 @@
-// src/components/BookingForm.jsx
 import { useState } from 'react'
 import { supabase } from '../supabaseClient'
 
