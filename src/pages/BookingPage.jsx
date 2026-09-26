@@ -1,4 +1,3 @@
-// src/pages/BookingPage.jsx
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
@@ -60,7 +59,7 @@ export default function BookingPage() {
       correo: form.correo,
       notas: form.notas,
       servicio: servicioElegido.nombre,
-      fecha: `2025-10-${fechaElegida.numero}`, // ajusta el formato/mes según tu calendario real
+      fecha: `2026-09-${fechaElegida.numero}`, // ajusta el formato/mes según tu calendario real
       hora: horaElegida,
       addon,
       total,
@@ -190,7 +189,7 @@ export default function BookingPage() {
             <div>
               <div className="flex justify-between items-center mb-4">
                 <p className="text-sky-400 text-xs tracking-wide">03. SELECCIÓN DE FECHA & TURNO</p>
-                <p className="text-neutral-500 text-xs">Octubre 2025</p>
+                <p className="text-neutral-500 text-xs">Septiembre 2026</p>
               </div>
 
               {/* Días */}
@@ -356,7 +355,6 @@ export default function BookingPage() {
               </div>
             </div>
           </div>
-          
         </div>
       </div>
     </div>

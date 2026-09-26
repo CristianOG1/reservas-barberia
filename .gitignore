@@ -19,6 +19,17 @@ dist/
 build/
 .DS_Store
 
+.agents/
+skills-lock.json
+
+# AI coding tools
+.claude/
+.codegraph/
+.cursor/
+.kiro/
+.mcp.json
+opencode.jsonc
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
