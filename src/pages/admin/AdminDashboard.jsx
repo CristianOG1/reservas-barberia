@@ -31,8 +31,8 @@ export default function AdminDashboard() {
               NB
             </div>
             <div>
-              <p className="text-sm font-semibold text-navy leading-tight">Noble Blade</p>
-              <p className="text-xs text-slate">Barbería Atelier</p>
+              <p className="text-sm font-semibold text-navy leading-tight">Nombre Admin</p>
+              <p className="text-xs text-slate">Nombre Barbería</p>
             </div>
           </div>
           <span className="mt-3 inline-block rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-semibold text-primary">
