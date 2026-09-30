@@ -1,22 +1,46 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink-950: #0E0C0A;
-  --color-ink-900: #16130F;
-  --color-ink-800: #211C17;
-  --color-ink-700: #2E2820;
+  /* Color system — SaaS editorial, paleta definida por el producto */
 
-  --color-bone-100: #F5F1E8;
-  --color-bone-400: #A8A093;
-  --color-bone-600: #6E675C;
+  /* Primary: #1E40AF — botones, links activos, sidebar activo, barras principales */
+  --color-primary: #1E40AF;
+  --color-primary-50: #1E40AF0A;
+  --color-primary-100: #1E40AF1A;
 
-  --color-brass-300: #E3C14E;
-  --color-brass-400: #C9A227;
-  --color-brass-500: #A8851B;
+  /* Secondary: #854D0E — ámbar/cobre, acentos cálidos, iconografía secundaria */
+  --color-amber: #854D0E;
+  --color-amber-50: #854D0E0A;
+  --color-amber-100: #854D0E1A;
 
-  --color-confirmada: #6E9BB8;
-  --color-completada: #7FA37A;
-  --color-cancelada: #B5645A;
+  /* Tertiary: #0F172A — texto principal, titulares, iconos oscuros */
+  --color-navy: #0F172A;
 
+  /* Neutral: #64748B — texto secundario, bordes, placeholders */
+  --color-slate: #64748B;
+  --color-slate-50: #F8FAFC;
+  --color-slate-100: #F1F5F9;
+  --color-slate-200: #E2E8F0;
+  --color-slate-300: #CBD5E1;
+
+  /* Escala Tailwind compatible necesaria */
+  --color-red-600: #DC2626;
+
+  /* Tipografía — el proyecto NO carga ninguna fuente externa: ni Google Fonts,
+     ni @font-face, ni CDN (ver §17 de AGENTS.md). Ambas pilas son del sistema.
+
+     Sans: cuerpo, navegación, tablas, formularios y etiquetas. Se declara
+     explícitamente para que quede nombrada como token y no dependa del default
+     implícito de Tailwind. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  /* Display: titulares, cifras grandes y horas. */
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+}
+
+/* El peso se ve más pesado en macOS sin esto; en Windows no cambia nada. */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }

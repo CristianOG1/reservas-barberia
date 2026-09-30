@@ -18,13 +18,13 @@ const servicios = [
 ]
 
 const dias = [
-  { label: 'LUN', numero: 21, disponible: true },
-  { label: 'MAR', numero: 22, disponible: true },
-  { label: 'MIÉ', numero: 23, disponible: true },
-  { label: 'JUE', numero: 24, disponible: true },
-  { label: 'VIE', numero: 25, disponible: true },
-  { label: 'SÁB', numero: 26, disponible: true },
-  { label: 'DOM', numero: 27, disponible: false },
+  { label: 'LUN', numero: 28, disponible: true },
+  { label: 'MAR', numero: 29, disponible: true },
+  { label: 'MIÉ', numero: 30, disponible: true },
+  { label: 'JUE', numero: 1, disponible: true },
+  { label: 'VIE', numero: 2, disponible: true },
+  { label: 'SÁB', numero: 3, disponible: true },
+  { label: 'DOM', numero: 4, disponible: false },
 ]
 
 const bloques = [
