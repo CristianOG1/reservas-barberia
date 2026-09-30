@@ -139,13 +139,14 @@ barberia/
 │       └── admin/
 │           ├── AdminDashboard.jsx      layout: <aside> + <NavLink> + <Outlet> + logout
 │           ├── ResumenPage.jsx         tarjetas de totales + citas de la semana
-│           ├── ServiciosAdmin.jsx      CRUD
-│           ├── ServicioForm.jsx        modal alta/edición
+│           ├── ServiciosAdmin.jsx      catálogo: métricas, filtros, tabla + CSV
+│           ├── ServicioForm.jsx        modal alta/edición/detalle (tema claro)
 │           ├── ProductosAdmin.jsx      CRUD
 │           ├── ProductoForm.jsx        modal alta/edición
 │           ├── BarberosAdmin.jsx       CRUD
 │           ├── BarberoForm.jsx         modal alta/edición
-│           └── CitasAdmin.jsx          listado + detalle + cambio de estado
+│           ├── CitasAdmin.jsx          agenda: métricas, filtros, tabla + acciones
+│           ├── CitaManualForm.jsx      modal alta manual / reprogramar
 ├── .env                                credenciales Supabase (gitignored)
 ├── .gitignore  .mcp.json  opencode.jsonc
 ├── eslint.config.js  vite.config.js  index.html
@@ -488,45 +489,55 @@ Diferencias reales entre ellos:
 - `handleEliminar` es idéntico en los tres y usa `confirm()` nativo.
 - Orden: los tres ordenan por `created_at` descendente.
 
-#### Presentación actual de las filas
+⚠ **El patrón de lógica se conserva; la presentación ya no es compartida.**
+`ServiciosAdmin` y `ProductosAdmin` usan **tabla + barra de filtros + paginación**.
+`BarberosAdmin` usa **tarjetas** en grid (`sm:grid-cols-2 lg:grid-cols-3`) porque cada
+barbero lleva avatar, rating, switch y contador de citas: una tabla no le cabe. Los tres
+están ya en el sistema claro (`slate-*`/`navy`/`primary`); **no queda ningún token del
+tema viejo (`cream-*`, `coffee-*`, `terracotta-*`, `ink-*`, `bone-*`) en
+`src/pages/admin/`**. Copia la lógica de aquí y el lenguaje visual de §11 / del hermano
+ya rediseñado, nunca al revés.
 
-Los tres comparten exactamente el mismo lenguaje visual (§11):
+#### `ServiciosAdmin.jsx` (diseño actual)
 
-- Las filas viven en **un solo contenedor** con `bg-ink-900 border border-ink-700
-  rounded-lg` + `divide-y divide-ink-700`. No son tarjetas aisladas con `gap` entre
-  ellas: los separadores son los propios bordes del contenedor.
-- Fila: `flex flex-wrap items-center gap-3 px-4 py-3 sm:flex-nowrap sm:gap-4
-  sm:px-5 sm:py-4`. En `<sm` las acciones bajan a su propia línea (`w-full
-  justify-end sm:w-auto`); desde `sm` todo queda en una línea.
-- Imagen: `h-12 w-12 sm:h-14 sm:w-14 shrink-0` — `rounded-md` en Servicios y
-  Productos, `rounded-full` (avatar) en Barberos.
-- Nombre: `truncate font-semibold text-bone-100` en un bloque `min-w-0 flex-1`.
-  El bloque de datos lleva `truncate` para no desbordar.
-- Precio: `tabular-nums text-bone-400`, `shrink-0`. Ojo: el precio es un dato
-  **secundario** y por eso va en `bone-400`; el nombre manda en `bone-100`.
-- Acción primaria del encabezado: `bg-brass-400 text-ink-950` con
-  `hover:bg-brass-300 active:bg-brass-500`. **Sin el símbolo `+`** en el texto.
-- Editar: acción ghost, `text-bone-400 hover:bg-ink-800 hover:text-bone-100`.
-- Eliminar: acción de texto en `text-cancelada` con `hover:bg-cancelada/10`
-  (`ring-cancelada/60` en el foco). **Nada de `bg-red-500/20` relleno.**
-- Título de página: `font-serif text-3xl text-bone-100 mb-8`.
-- Estado vacío: bloque `bg-ink-900 border border-ink-700 rounded-lg px-5 py-10
-  text-center`, texto `text-sm text-bone-600` y **una sola** acción primaria brass.
-- Todos los botones llevan `focus-visible:ring-2` con anillo brass.
+- Header: eyebrow `SERVICIOS`, `h1` "Catálogo de Servicios", y a la derecha
+  "Exportar Carta" (outline) + "+ Agregar Nuevo Servicio" (`bg-primary`).
+- 3 métricas (`grid grid-cols-2 gap-4 lg:grid-cols-3`): catálogo, tarifa promedio y
+  duración promedio. Esta última **parsea `duracion`** con `aMinutos()`, porque la
+  columna es TEXT y puede traer `'30'` o `'50 min'`.
+- Barra de filtros idéntica a `ProductosAdmin`: buscador + select de categorías +
+  contador "Mostrando X–Y de Z registros".
+- Tabla de 5 columnas con `overflow-x-auto` + `min-w-[760px]`, y paginación que
+  **solo aparece si hay más de una página** (igual que Productos).
+- El punto de color de la categoría sale de `COLORES_CATEGORIA` indexado por
+  `categorias.indexOf(s.categoria)` — el mismo truco que en Productos.
+- **"Exportar Carta" sí hace algo**: arma un CSV de los servicios **filtrados** en el
+  navegador (`Blob` + `a.download`), con `;` como separador y BOM `\uFEFF` para que
+  Excel en español respete acentos. Se deshabilita si el filtro no deja filas.
+- **"Ver" abre el mismo `ServicioForm` con `soloLectura`** (§9.4): no hay vista de
+  detalle en el proyecto y un ícono muerto sería un control roto.
+
+#### `BarberosAdmin.jsx` (tarjetas, sistema claro)
+
+- Tarjeta: `rounded-xl border border-slate-200 bg-white p-5` en
+  `grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3`.
+- Avatar `h-14 w-14 rounded-full overflow-hidden bg-slate-100` con punto de estado
+  `absolute bottom-0.5 right-0.5 h-3 w-3 rounded-full border-2 border-white`.
+- Barra de búsqueda + filtro segmentado (`p-0.5` con botones `bg-primary` al activo),
+  el mismo segmented control que usan los tabs de estado de `CitasAdmin`.
+- Título de página: `font-serif text-3xl text-navy`.
 
 **Switch de disponibilidad (solo `BarberosAdmin`)**
 
 Control real, no un texto ni un pill. Es un `<button type="button">` con
 `role="switch"` y `aria-checked={b.disponible}`, y la etiqueta visible
-"Disponible" / "No disponible" hace de nombre accesible.
+"Disponible para Citas" hace de nombre accesible.
 
-- Pista: `relative h-4 w-7 rounded-full` → `bg-ink-800` inactivo, `bg-brass-400` activo.
-- Knob: `absolute top-0.5 h-3 w-3 rounded-full` que viaja de `left-0.5`
-  (`bg-bone-600`) a `left-3.5` (`bg-ink-950`), con `transition-colors` /
-  `transition-all`.
-- Borde exterior: `border-ink-700` inactivo, `border-brass-400/40` activo.
+- Pista: `relative inline-flex h-5 w-9 rounded-full` → `bg-slate-300` inactivo,
+  `bg-primary` activo; knob `h-3.5 w-3.5 rounded-full bg-white` que viaja con
+  `translate-x-1` / `translate-x-4`.
 - `BarberoForm` reutiliza el mismo control (§9.4). Si añades un switch nuevo,
-  copia este markup, no improvises otro.
+  copia ese markup, no improvises otro.
 
 ### 9.4 Los tres modales (`ServicioForm`, `ProductoForm`, `BarberoForm`)
 
@@ -563,150 +574,128 @@ Carpetas: `servicios/`, `productos/`, `barberos/`. La vista previa es local con
 `URL.createObjectURL(file)` y **nunca se revoca** (fuga menor preexistente).
 Placeholder de imagen: `https://placehold.co/80x80?text=%20`.
 
-Estructura del modal: overlay `fixed inset-0 bg-black/70 flex items-center
-justify-center p-4 z-50`. El `<form>` es **idéntico en los tres**:
+Estructura del modal: overlay `fixed inset-0 z-50 flex items-center justify-center
+bg-black/50 p-4`. El `<form>`:
 
 ```
 flex max-h-[90vh] w-full max-w-md flex-col gap-4 overflow-y-auto
-rounded-lg border border-ink-700 bg-ink-900 p-5 sm:p-6
+rounded-xl border border-slate-200 bg-white p-5 sm:p-6
 ```
 
-**Los tres tienen `max-h-[90vh] overflow-y-auto`.** Antes solo lo tenían
-`ServicioForm` y `ProductoForm`; `BarberoForm` se añadir al unificarlos. Si
-añades un modal nuevo, copie ese contenedor tal cual.
+⚠ Los cuatro formularios (`ServicioForm`, `CitaManualForm`, `ProductoForm`,
+`BarberoForm`) están ya en el tema claro (`bg-white`, `border-slate-200`,
+`rounded-xl`, `soloCampo` compartida). Si añades un modal nuevo, copia `ServicioForm`
+completo: es la referencia.
 
-Presentación común a los tres:
+Presentación común (la vigente, la de `ServicioForm`):
 
-- Título: `font-serif text-lg text-bone-100`, con
-  `esEdicion ? 'Editar x' : 'Nuevo x'`.
+- Cabecera: eyebrow `text-xs uppercase tracking-widest text-amber` + título
+  `font-serif text-lg text-navy` con `esEdicion ? 'Editar X' : 'Nuevo X'`, y una
+  línea `text-xs text-slate` de ayuda.
 - **Cada campo tiene label visible** encima: `<label htmlFor="…"
-  className="block text-sm text-bone-400">` + `*` en los obligatorios. Los inputs
+  className="block text-sm text-slate">` + `*` en los obligatorios. Los inputs
   llevan `id` para que la asociación sea real. No dependas del placeholder para
-  explicar el campo (los placeholders originales se conservan como texto de ayuda).
-- Input, `textarea` y `select`: `mt-1 w-full rounded-md border border-ink-700
-  bg-ink-800 px-4 py-2.5 text-sm text-bone-100 transition-colors
-  placeholder:text-bone-600 focus-visible:outline-none focus-visible:ring-2
-  focus-visible:ring-brass-400/60`. El `textarea` añade `resize-none`.
-- Foco: **anillo brass**, nunca azul. El `outline-none` siempre va acompañado de
-  su `focus-visible:ring-2`.
-- Input de archivo: label "Imagen" + `<input type="file">` con el botón estilizado
-  vía variantes `file:` (`file:rounded-md file:border-0 file:bg-ink-800
-  file:px-3 file:py-1.5 file:text-sm file:text-bone-100 hover:file:bg-ink-700`).
-- Botón **Guardar**: `flex-1 rounded-md bg-brass-400 px-5 py-2.5 text-sm
-  font-semibold text-ink-950` con `hover:bg-brass-300 active:bg-brass-500` y
-  `disabled:opacity-50`. Texto `{guardando ? 'Guardando...' : 'Guardar'}`.
-  **Nunca `bg-white`.**
-- Botón **Cancelar**: `rounded-md border border-ink-700 px-5 py-2.5 text-sm
-  text-bone-400` con `hover:bg-ink-800 hover:text-bone-100`. Es secundario, no
-  compite con Guardar.
-- Mensaje de error: `text-sm text-cancelada` (antes `text-red-400`). El texto del
-  mensaje sigue siendo el genérico de `handleSubmit`.
-- En `ServicioForm`, Costo y Duración van en `grid gap-4 sm:grid-cols-2` para que
+  explicar el campo.
+- Input / `textarea` / `select`, con la clase compartida `soloCampo` declarada
+  arriba del `return`: `mt-1 w-full rounded-lg border border-slate-200 bg-slate-50
+  px-3 py-2.5 text-sm text-navy outline-none placeholder:text-slate-400
+  focus:border-primary focus:ring-2 focus:ring-primary-100` (+ `resize-none` en el
+  `textarea`, `tabular-nums` en precio y duración).
+- Foco: borde + anillo `primary`. El `outline-none` nunca va solo.
+- Input de archivo: label + `<input type="file">` con el botón estilizado vía
+  variantes `file:` (`file:rounded-md file:border-0 file:bg-slate-100 file:px-3
+  file:py-1.5 file:text-sm file:text-navy hover:file:bg-slate-200`).
+- Botón **Guardar**: `flex-1 rounded-lg bg-primary px-5 py-2.5 text-sm
+  font-semibold text-white` con `hover:bg-[#1a38a0]` y `disabled:opacity-50`.
+  Texto `{guardando ? 'Guardando...' : 'Guardar'}`.
+- Botón **Cancelar**: `rounded-lg border border-slate-200 px-5 py-2.5 text-sm
+  text-navy` con `hover:bg-slate-100`. Es secundario, no compite con Guardar.
+- Mensaje de error: `<p role="alert" className="text-sm text-red-600">`. El texto
+  sigue siendo el genérico de `handleSubmit`.
+- En `ServicioForm`, Tarifa y Duración van en `grid gap-4 sm:grid-cols-2` para que
   en móvil apilen en vez de comprimirse.
+- `ServicioForm` acepta `soloLectura`: mismo formulario con los campos
+  `disabled` + `disabled:bg-slate-100`, sin selector de archivo y con un único
+  botón "Cerrar". Es lo que sirve el ícono "Ver" de la tabla.
 
 **Switch "Disponible" (solo `BarberoForm`)**
 
 Sustituye al `<input type="checkbox">` nativo. Es el **mismo control que
 `BarberosAdmin`** (§9.3): `<button type="button" role="switch"
 aria-checked={form.disponible} onClick={() => setForm({ …form, disponible:
-!form.disponible })}>`, pista `h-4 w-7 rounded-full` (`bg-ink-800` /
-`bg-brass-400`), knob `h-3 w-3 rounded-full` de `left-0.5` a `left-3.5`, y el
-texto "Disponible" al lado.
+!form.disponible })}>`, pista `relative inline-flex h-5 w-9 rounded-full`
+(`bg-slate-300` inactivo / `bg-primary` activo), knob `h-3.5 w-3.5 rounded-full
+bg-white` que viaja con `translate-x-1` / `translate-x-4`.
 
-La etiqueta es simplemente **"Disponible"**, no "Disponible desde que se crea": el
-mismo control sirve para crear y para editar, y el texto antiguo mentía al editar.
+La etiqueta es **"Disponible para Citas"** (idéntica a la de `BarberosAdmin`), y
+deliberadamente **no** "Disponible desde que se crea": el mismo control sirve para
+crear y para editar, y ese texto mentía al editar. El switch va dentro de un bloque
+`rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3` para que se lea como
+opción de configuración y no como texto suelto.
 
 **El valor que va a Supabase no cambió**: el campo sigue siendo `form.disponible`
 (booleano) y `payload` sigue haciendo `{ ...form, imagen: urlImagen }`. Lo único
 que cambió es el control visual.
 
-### 9.5 `CitasAdmin.jsx`
+### 9.5 `CitasAdmin.jsx` — "Gestión de Citas & Calendario del Salón"
 
-Dos columnas `grid gap-6 lg:grid-cols-3`: rail en `lg:col-span-2`, panel de detalle
-`h-fit rounded-lg border border-ink-700 bg-ink-900 p-5 sm:p-6 lg:sticky lg:top-8`.
+**La página más grande del panel.** Rediseñada por completo en el sistema `slate/primary/
+amber/navy`. Ya **no** usa el rail + panel de detalle ni los tokens `ink-*`/`bone-*`/
+`brass-*`/`sage-*`/`muted-blue-*`/`cancelled-*` (esa descripción ya no aplica; el código
+antiguo quedó replaced). Estructura, con las 5 secciones marcadas por comentarios
+`SECCIÓN N` en el propio archivo:
 
-- Estados (`const estados`): `['pendiente', 'confirmada', 'completada', 'cancelada']`.
-  **Estos 4 valores no cambian** y `estados` no se toca. Se leen con
-  `…[e] || ….pendiente` porque **`estado` es nullable en la BD** (las citas nuevas
-  se insertan sin `estado`).
-- Mapa `colorEstado` (nodo del rail) + `textEstado` (etiqueta) + `puntoEstado`
-  (punto). Los tres leen con fallback a `pendiente`.
-- Estados vacíos: `'Cargando...'` (`text-bone-400`), `'Aún no hay citas
-  agendadas.'` y en el panel `'Selecciona una cita para ver su información.'`
-  (`text-sm text-bone-600`).
-- `cambiarEstado(nuevoEstado)`: **optimistic update** en las dos listas
-  (`setCitaSeleccionada({...})` y `setCitas(citas.map(...))`) y luego
-  `update({ estado }).eq('id', citaSeleccionada.id)`.
-- El panel muestra teléfono, correo (si existe), servicio, fecha, hora, add-on
-  (si `addon`), total (si `total`) y notas (si hay). **No hay fila de barbero**:
-  la tabla `citas` no tiene ese campo y no se añadió ninguno.
+| Sección | Contenido |
+|---|---|
+| 1 · Header | Eyebrow `text-amber` + `h1` `font-serif text-3xl` + subtítulo, y a la derecha el CTA `bg-primary` |
+| 2 · Métricas | 4 tarjetas `rounded-xl border-slate-200 bg-white p-5`, `grid-cols-2 lg:grid-cols-4` |
+| 3 · Controles | Navegador de fecha (`<` / `Hoy` / `>` + etiqueta en `font-serif`), select de barbero, toggle de vista, y los tabs de estado en el header de la tabla |
+| 4 · Tabla | 6 columnas, `overflow-x-auto` + `min-w-[800px]`, y paginación real (8 por página) |
+| 5 · Panel inferior | `grid gap-4 md:grid-cols-2`: distribución semanal y recordatorios |
 
-#### Estructura del rail
+⚠ **Esta página no habla de sillones.** Ni badge de capacidad, ni tarjeta de sillones, ni
+columna "Sillón", ni % de ocupación: se pidió quitarlo y **no se usa `sillon_numero` /
+`sillon_nombre`**. La duración de la columna "Sillón" del prompt original se resolvió
+resolviendo el servicio contra el catálogo, no leyendo el sillón del barbero.
 
-```
-<ol>  →  <li>  →  <button onClick={() => setCitaSeleccionada(c)}>
-```
+#### Datos y reglas de negocio
 
-Lista **semántica**: `<ol>` → `<li>` → `<button>`. Antes era una lista plana de
-`<button>` sueltos sin `<li>`. El botón conserva la misma interacción: el click
-sigue fijando `citaSeleccionada`. Es una mejora semántica de la estructura visual,
-**no** un cambio de lógica.
+- Los 4 estados (`pendiente`, `confirmada`, `completada`, `cancelada`) **no cambian**.
+  `estadoDe(cita)` centraliza el `|| 'pendiente'` porque **`estado` es nullable**.
+- Los badges usan `BADGE_ESTADO` + `ETIQUETA_ESTADO`, el mismo mapa que `ResumenPage`:
+  pendiente ámbar, confirmada azul, completada verde, cancelada rojo.
+- **`cargarDatos` carga las 3 tablas completas** (`citas`, `barberos`, `servicios`) con un
+  `Promise.all` y filtra todo en el cliente. `citas` son pocas filas; no paginar la query.
+- **`estaEnCurso(cita)`** no lee un estado: lo deriva comparando la hora actual contra
+  `hora + duración` del servicio, solo para citas `confirmada`. Si algún día se agrega el
+  literal `en_curso`, también lo acepta.
+- **`buscarServicio(nombre, servicios)`** resuelve la duración con 3 escalones: nombre
+  exacto → categoría exacta → categoría contenida en el texto. Hace falta porque
+  `citas.servicio` es texto libre y casi nunca coincide con `servicios.nombre` (las citas
+  dicen "Corte", el catálogo dice "Corte de Cabello").
+- **"Primera visita"** = ninguna otra cita del mismo `telefono` con fecha anterior (o el
+  mismo día a una hora anterior).
+- **"Cobrar" escribe `estado: 'completada'`**, no un pago: la tabla no tiene columnas de
+  pago. Marcado como PENDIENTE en el código.
+- **"Recontactar" abre el marcador `tel:`**, no una plantilla de WhatsApp (no hay
+  integración de mensajería).
+- **Filtro de barbero**: `''` = todos, un `id`, o `FILTRO_SIN_ASIGNAR` para las citas
+  con `barbero_id` nulo (hoy son todas).
+- El reloj se congela con `const [reloj] = useState(() => new Date())`: llamar a
+  `Date.now()` en el cuerpo del render dispara `react-hooks/purity`.
 
-Dentro de cada `<li>`, el orden en el DOM es `<button>` y **después** los
-elementos decorativos (`hairline`, línea del rail, nodo), para que pinten por
-encima del `hover:bg-ink-800` del botón.
+#### Lo que es UI pendiente de lógica
 
-- Contenedor: `rounded-lg border border-ink-700 bg-ink-900 p-4 sm:p-5`.
-- Línea del rail: `absolute -bottom-1 left-3 top-7 w-px bg-ink-700`, un `<span>`
-  real, y **no se renderiza en la última cita** (`const esUltima = i === citas.length - 1`).
-- Nodo: `absolute h-2.5 w-2.5 rounded-full border` en reposo, `h-4 w-4` al
-  seleccionarse, manteniéndose **centrado sobre la línea** (`left-[7px]`/`top-2` en
-  reposo, `left-1`/`top-[5px]` seleccionado).
-- El estado se lee **por forma y color del nodo**, no por pills:
-  `pendiente` hueco con `border-brass-400` sobre `bg-ink-950`; `confirmada` relleno
-  `bg-confirmada`; `completada` relleno `bg-completada`; `cancelada` relleno
-  `bg-cancelada`.
-- Transición: `transition-[left,top,width,height,background-color,border-color]
-  duration-200 motion-reduce:transition-none`. Es la **única animación** de la
-  página. Sin pulso, sin rebote, sin glow, sin sombras.
-- Hora: `w-12 sm:w-16 shrink-0 font-serif text-lg tabular-nums text-bone-400` —
-  columna de ancho fijo para que las horas alineen.
-- Nombre: `truncate font-semibold text-bone-100`; si `cancelada`, se muestra
-  `text-bone-600 line-through`.
-- Fecha + estado: `shrink-0 text-right`, con un punto de estado
-  (`h-1.5 w-1.5 rounded-full`) + etiqueta `text-xs capitalize`. **Sin pill grande.**
+Marcado con `PENDIENTE` en el código, no lo tomes por implementado:
 
-#### Cita seleccionada
-
-- Hairline brass de 2px pegado al borde izquierdo:
-  `absolute bottom-0 left-0 top-0 w-0.5 rounded-full bg-brass-400`, con
-  `transition-opacity duration-200` entre opaco y `opacity-0`.
-- El nodo crece de 10px a 16px. **Nada de borde de color alrededor de la tarjeta.**
-- `aria-current` en el botón seleccionado.
-
-#### Panel de detalle: filas de definición
-
-Un `<dl>` con `sm:grid-cols-[6.5rem_minmax(0,1fr)]`: etiqueta en columna fija
-`text-sm text-bone-600`, valor `text-sm text-bone-100` alineado a la derecha,
-filas separadas por `border-b border-ink-700`. La ficha se construye con un array
-`ficha` (view-model) que replica 1:1 las condicionales del JSX original; el
-`.filter(Boolean)` descarta las filas cuyos campos no existen.
-
-- **Notas** es la excepción: `ancho: true` la renderiza a ancho completo y
-  alineada a la izquierda, porque es texto largo y no tiene sentido a la derecha.
-- El encabezado lleva el nombre en `font-serif text-xl text-bone-100` y debajo el
-  punto + etiqueta de estado (mismo lenguaje que el rail, no un badge).
-
-#### Botones de estado
-
-`flex flex-wrap gap-2` sobre `estados.map(...)`, sin cambiar el array:
-
-- Activo (`citaSeleccionada.estado === e`):
-  `border-brass-400 bg-brass-400 font-semibold text-ink-950` + `aria-pressed`.
-- Inactivo: `border-ink-700 bg-ink-800 text-bone-400` con
-  `hover:border-bone-600 hover:text-bone-100`.
-- **Nunca `bg-white`** — antes el estado activo usaba el mismo blanco que el CTA
-  "agregar", y eso los confundía.
+- **Vista Calendario**: la pestaña del toggle es navegable y muestra un placeholder con
+  las 3 piezas que faltan (franjas por hora, bloqueos, aviso de solapamiento). No hay
+  modelo de horarios.
+- **Recordatorios SMS/WhatsApp**: tarjeta estática, botones **deshabilitados** a propósito
+  (no fingen mandar nada). Falta proveedor + Edge Function + regla de disparo.
+- **Cobrar**: ver arriba.
+- **Tag "Club Noble" (VIP)**: omitido a propósito, no hay ningún criterio real en el
+  modelo que lo sostenga. No lo inventes sin hablarlo.
 
 ---
 
@@ -730,12 +719,13 @@ a un gist.** Si necesitas el valor, pregunta.
 
 ### 10.2 Tablas
 
-**No hay migraciones, ni SQL, ni carpeta `supabase/` en el repo.** El esquema solo se
-puede inferir del uso en el código. Lo que se ve en las consultas:
+**No hay carpeta `supabase/` en el repo ni SQL versionado en archivos**, pero SÍ hay
+migraciones aplicadas desde el MCP de Supabase (§10.5). El esquema solo se puede inferir
+del uso en el código. Lo que se ve en las consultas:
 
 | Tabla | Columnas usadas | Evidencia |
 |---|---|---|
-| `citas` | `id`, `nombre`, `telefono`, `correo`, `notas`, `servicio`, `fecha`, `hora`, `addon`, `total`, `estado` | `BookingPage` inserta todos salvo `id`/`estado`; `CitasAdmin` lee `estado`, `addon`, `total`, `notas`, `correo` |
+| `citas` | `id`, `nombre`, `telefono`, `correo`, `notas`, `servicio`, `fecha`, `hora`, `addon`, `total`, `estado`, `barbero_id`, `created_at` | `BookingPage` inserta todos salvo `id`/`estado`/`barbero_id`; `CitasAdmin` lee `estado`, `addon`, `total`, `notas`, `correo`, `barbero_id`; `CitaManualForm` escribe `barbero_id` |
 | `servicios` | `id`, `nombre`, `categoria`, `descripcion`, `costo`, `duracion`, `imagen`, `created_at` | `ServicioForm` escribe `{nombre, categoria, descripcion, costo:Number, imagen}`; los tres ordenan por `created_at` |
 | `productos` | `id`, `nombre`, `categoria`, `descripcion`, `precio`, `imagen`, `created_at` | `ProductoForm` escribe `{nombre, categoria, descripcion, precio:Number, imagen}` |
 | `barberos` | `id`, `nombre`, `especialidad`, `disponible`, `imagen`, `created_at` | `BarberoForm` escribe `{nombre, especialidad, disponible, imagen}`; `ResumenPage` filtra `.eq('disponible', true)` |
@@ -770,6 +760,41 @@ Solo **email + password** (`signInWithPassword`). No hay OAuth, magic link, ni
 recupera con `getSession()` al montar. El primer usuario administrador se crea fuera de
 la app (dashboard de Supabase).
 
+### 10.5 RLS y políticas (verificado en la BD, no en el código)
+
+**Las 4 tablas tienen RLS habilitado.** Esto no se ve en el repo: se comprobó con el MCP
+de Supabase (`pg_policies`). Las políticas vigentes:
+
+| Tabla | Política | Comando | Rol |
+|---|---|---|---|
+| `citas` | `Cualquiera puede agendar` | INSERT | `anon` |
+| `citas` | `Admin escribe` | ALL | `authenticated` |
+| `barberos` | `Lectura publica` | SELECT | `anon` |
+| `barberos` | `Admin escribe` | ALL | `authenticated` |
+| `productos` | `Lectura publica` | SELECT | `anon` |
+| `productos` | `Admin escribe` | ALL | `authenticated` |
+| `servicios` | `Lectura publica` | SELECT | `anon` |
+| `servicios` | `Admin escribe` | ALL | `authenticated` |
+
+⚠ **`citas` NO tiene política de SELECT para `anon`.** Es intencional: la tabla de
+reservas solo la lee el panel (que va autenticado), mientras el sitio público únicamente
+la inserta. No la abras.
+
+⚠ **El `Admin escribe` sobre `citas` es nuevo** (migración `admin_escribe_citas`, aplicada
+con autorización explícita del usuario). Antes, el panel **no podía escribir en `citas`**:
+`citas` solo tenía la política `INSERT` de `anon`, así que todo `update` de estado
+(`cambiarEstado` y el nuevo `aplicarEstado`) era rechazado por RLS en silencio, porque el
+código nunca revisaba el `error`. **No vuelvas a descartar el `error` de una escritura.**
+
+Tipos de columna que importan para el cliente:
+
+- `citas.fecha` es `date` → llega como `'YYYY-MM-DD'` y se compara lexicográficamente.
+- `citas.hora` es `time without time zone` → llega como `'HH:MM:SS'`, **no** `'10:00 AM'`.
+  Los `<input type="time">` sí son válidos contra esa columna; los textos con AM/PM que
+  manda `BookingPage` no lo son (§18, punto 23).
+- `citas.total`, `servicios.costo` y `servicios.duracion` son `numeric`/`text`: castear
+  con `Number()` antes de sumar o comparar.
+
 ---
 
 ## 11. Reglas de UI/UX
@@ -779,7 +804,7 @@ que el usuario lo pida:
 
 | Zona | Sistema | Tokens |
 |---|---|---|
-| **Dashboard `/admin`** (8 archivos en `src/pages/admin/`) | Sistema actual, rediseñado | `ink-*` / `bone-*` / `brass-*` |
+| **Dashboard `/admin`** (8 archivos en `src/pages/admin/`) | Sistema actual, rediseñado | `slate` / `primary` / `amber` / `navy` |
 | **Sitio público** (`/`, `/agendar`, `/login`) | Sistema anterior, **sin tocar** | `neutral-*` / `sky-500` / `emerald` / `amber` / `yellow` |
 
 El rediseño del admin **no** tocó el sitio público. Esa es una costura conocida y
@@ -793,44 +818,57 @@ Definidos en el bloque `@theme` de `src/index.css`. **No existe
 `tailwind.config.js` y no debe crearse**; no se hardcodeen hex en los componentes,
 usa el token.
 
-**Superficies** (negro cálido: tungsteno / latón / cuero)
+**Superficies** (fondo claro, casi blanco)
 
 | Token | Hex | Uso |
 |---|---|---|
-| `ink-950` | `#0E0C0A` | fondo de la app |
-| `ink-900` | `#16130F` | cards, paneles, rail, sidebar, superficies del modal |
-| `ink-800` | `#211C17` | inputs, elementos elevados, hover |
-| `ink-700` | `#2E2820` | bordes y separadores |
+| `slate-50` | `#F8FAFC` | fondo principal de la app |
+| `slate-100` | `#F1F5F9` | superficies elevadas (sidebar, cards) |
+| `slate-200` | `#E2E8F0` | bordes sutiles y divisores |
+| `slate-300` | `#CBD5E1` | borders principales |
+| `white` | `#FFFFFF` | superficies primarias y modales |
 
-**Texto** (hueso)
-
-| Token | Hex | Uso |
-|---|---|---|
-| `bone-100` | `#F5F1E8` | texto principal |
-| `bone-400` | `#A8A093` | texto secundario |
-| `bone-600` | `#6E675C` | texto terciario, placeholders, labels |
-
-**Acento brass** — un solo hue interactivo = "esto se puede tocar"
+**Texto** (café/navy oscuro — contraste mínimo 4.5:1)
 
 | Token | Hex | Uso |
 |---|---|---|
-| `brass-300` | `#E3C14E` | hover de la acción primaria |
-| `brass-400` | `#C9A227` | base: acción primaria, indicador activo, foco |
-| `brass-500` | `#A8851B` | pressed / active |
+| `navy` | `#0F172A` | texto principal, títulos, headers |
+| `slate` | `#64748B` | texto secundario, bordes, placeholders |
 
-**Estados de cita** — escala propia, independiente del fondo
+**Acento primario** (azul — para acciones, activo, progreso)
+
+| Token | Uso |
+|---|---|
+| `primary` | `#1E40AF` — botones principales, links activos, estado activo del sidebar, barras de progreso |
+| `primary-50` | `#1E40AF0A` (10% opacidad) — badges suaves, destacados de fondo |
+| `primary-100` | `#1E40AF1A` (10% opacidad) — hover y fondos muy suaves |
+
+**Acento secundario** (ámbar/cobre — acentos cálidos)
+
+| Token | Uso |
+|---|---|
+| `amber` | `#854D0E` — acentos cálidos, iconografía secundaria, texto de highlights |
+| `amber-50` | `#854D0E0A` (10% opacidad) — badges y fondos suaves |
+
+**Estados de cita** (escala propia, independiente del fondo)
 
 | Estado | Token | Hex | Lectura |
 |---|---|---|---|
-| pendiente | `brass-400` (no tiene token propio) | `#C9A227` | nodo **hueco** con borde brass |
-| confirmada | `confirmada` | `#6E9BB8` | nodo relleno |
-| completada | `completada` | `#7FA37A` | nodo relleno |
-| cancelada | `cancelada` | `#B5645A` | nodo relleno, contenido atenuado |
+| pendiente | `brass-400` | — | punto/etiqueta (pendiente elegante) |
+| confirmada | `primary` | `#1E40AF` | badge azul sólido |
+| en curso | `amber` | `#854D0E` | badge ámbar |
+| completada | `green-600` | `#16A34A` | badge verde |
+| cancelada | `red-600` | `#DC2626` | badge rojo |
 
-⚠ `cancelada` está **semánticamente sobrecargado**: representa el estado
-"cancelada" de una cita **y** las acciones destructivas ("Eliminar", mensajes de
-error). Es un problema conocido y **pendiente** de separar en un token de peligro
-(§18). No lo "arregles" por tu cuenta.
+**Peligro** (acciones destructivas, errores)
+
+| Token | Hex | Uso |
+|---|---|---|
+| `red-600` | `#DC2626` | solo para errores y acciones destructivas |
+
+✅ `cancelada` ya **no** está sobrecargado: el estado usa `red-600` solamente en
+el badge de estado; las acciones de eliminar/error usan los mismos rojos del tema pero
+en la semántica correcta.
 
 **Nota sobre Tailwind v4:** las variables del `@theme` se emiten **bajo demanda**,
 solo si alguna clase las usa. Es normal que un token definido no aparezca en el CSS
@@ -838,37 +876,51 @@ compilado hasta que se use.
 
 ### 11.2 Tipografía
 
-- **UI / body / navegación / labels:** pila `sans` del sistema, sin cambios.
-- **Display:** pila serif del sistema,
-  `ui-serif, Georgia, Cambria, "Times New Roman", serif` (token `--font-serif`).
-  **Sin fuentes externas, sin CDN, sin descargas.**
+**El proyecto no carga ninguna fuente externa.** Verificado: `index.html` solo tiene
+favicon + viewport (sin `<link>` a Google Fonts, sin preconnect), `src/index.css` no
+tiene `@font-face` ni `font-family` suelta, no existe `tailwind.config.js` y
+`package.json` no trae ninguna librería de fuentes. La landing pública y el admin
+comparten por lo tanto las **mismas dos pilas del sistema**:
+
+- **UI / body / navegación / labels / tablas / inputs:** token `--font-sans` =
+  `ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+  sans-serif`. Antes era el default implícito de Tailwind; ahora está declarado
+  explícitamente en el `@theme` para que quede nombrado y no dependa del default.
+- **Display:** token `--font-serif` =
+  `ui-serif, Georgia, Cambria, "Times New Roman", serif`.
+- `body` lleva `-webkit-font-smoothing: antialiased` (fuera del `@theme`, al final de
+  `src/index.css`): sin esto el peso se ve más pesado en macOS.
+- ⚠ **No añadas Google Fonts, CDN ni `@font-face`** (§17). Si en algún momento se
+  quiere una fuente real, es una migración consciente del producto completo —no un
+  `<link>` suelto en un componente—, y hay que actualizar landing y admin a la vez.
 - Dónde va serif: títulos de página del admin (`font-serif text-3xl`), títulos de
-  panel y de modal (`text-xl` / `text-lg`), cifras de las tarjetas de `ResumenPage`
-  (`text-3xl`) y la hora en el rail de `CitasAdmin` (`text-lg`).
+  panel y de modal (`text-lg` / `text-base`), cifras de las tarjetas de métricas
+  (`text-3xl`), la hora en la tabla de `CitasAdmin` (`text-sm`) y la fecha del
+  navegador de citas (`text-sm`). **Las 34 apariciones de `font-serif` en `src/` son
+  todas deliberadas; no hay ninguna fuente distinta colgando de alguna página.**
 - **Cifras y horas: `tabular-nums` siempre.** Sin esto las columnas tiemblan.
 - Escala en el admin: `text-xs` / `text-sm` / `text-lg` / `text-xl` / `text-3xl`.
   El salto de UI a display es deliberado.
 
 ### 11.3 Recetas del dashboard
 
-- **Acción primaria**: `bg-brass-400 text-ink-950 font-semibold` con
-  `hover:bg-brass-300 active:bg-brass-500 disabled:opacity-50`. Botones de admin
+- **Acción primaria**: `bg-primary text-white font-semibold` con
+  `hover:bg-[#1a38a0] disabled:opacity-50`. Botones de admin
   en minúscula y **sin símbolo `+`**. Nunca `bg-white`.
-- **Acción ghost / texto**: `text-bone-400 hover:bg-ink-800 hover:text-bone-100`
+- **Acción ghost / texto**: `text-coffee-600 hover:bg-cream-200 hover:text-coffee-900`
   (Editar, Cancelar, logout).
-- **Acción destructiva**: `text-cancelada` con `hover:bg-cancelada/10`. Nunca
+- **Acción destructiva**: `text-danger-400` con `hover:bg-danger-400/10`. Nunca
   pill relleno.
-- **Superficie**: `bg-ink-900 border border-ink-700 rounded-lg`. Nótese que el
+- **Superficie**: `bg-cream-100 border border-cream-300 rounded-lg`. Nótese que el
   admin **ya no usa `rounded-xl`**, ni superficies como el kit de tarjetas SaaS.
-- **Inputs**: `bg-ink-800 border-ink-700 text-bone-100 placeholder:text-bone-600`,
-  con label visible `text-sm text-bone-400` encima.
-- **Foco**: `focus-visible:ring-2 focus-visible:ring-brass-400/60` (o
-  `ring-cancelada/60` en destructivas). **El `outline-none` nunca va solo** — un
-  anillo brass lo acompaña siempre. Ese fue un bug real del sistema anterior
-  (11 inputs sin foco visible por teclado).
-- **Indicador de ruta activa**: `border-l-2 border-brass-400` + `text-bone-100`,
+- **Inputs**: `bg-white border-cream-300 text-coffee-900 placeholder:text-coffee-400`,
+  con label visible `text-sm text-coffee-600` encima.
+- **Foco**: `focus-visible:ring-2 focus-visible:ring-terracotta-400/60` (o
+  `ring-danger-400/60` en destructivas). **El `outline-none` nunca va solo** — un
+  anillo terracota lo acompaña siempre.
+- **Indicador de ruta activa**: `border-l-2 border-terracotta-400` + `text-coffee-900`,
   con `border-transparent` en el inactivo para no desplazar el layout.
-  **Nunca un fondo brass relleno.**
+  **Nunca un fondo terracota relleno.**
 - **Indicador de estado**: punto `h-1.5 w-1.5 rounded-full` + etiqueta
   `text-xs capitalize`. **Nada de pills grandes como representación primaria del
   estado.**
@@ -881,19 +933,24 @@ compilado hasta que se use.
 - **Sin gradients.** Ningún `bg-gradient-*`, ni `linear-gradient`, ni washes decorativos.
 - **Sin glow.** Ningún `drop-shadow-*`, ni halo, ni resplandor en el acento.
 - **Sin glassmorphism** ni fondos translúcidos de cristal.
-- **Sin sombras fuertes.** Si necesitas separación, usa `border-ink-700`.
+- **Sin sombras fuertes.** Si necesitas separación, usa `border-cream-300`.
 - **Sin pills grandes de color.** El estado se comunica con nodo/punto + etiqueta.
-- **Sin animaciones innecesarias.** La **única** transición del admin es la del
-  nodo del rail de `CitasAdmin` (`duration-200` + `motion-reduce:transition-none`).
-  Nada de pulso, rebote, entradas animadas ni hover en cada tarjeta.
-- **Sin iconos decorativos.** El estado se marca con puntos de estado, no con SVG.
+- **Sin animaciones innecesarias.** Nada de pulso, rebote, entradas animadas ni hover en
+  cada tarjeta. Lo único que se mueve es un `transition-colors` en hover/focus de
+  controles, que es el patrón de todo el admin.
 - **Sin sombras como sistema de jerarquía**: la jerarquía se construye con
-  `ink-*` (superficie), `bone-*` (peso textual) y `font-serif` (display).
+  `slate-*` (superficie), `navy` (peso textual) y `font-serif` (display).
+
+⚠ **Esta lista mezcla dos generaciones del admin.** Las viñetas sobre `cream-*`/
+`coffee-*`/`border-cream-300` quedaron del sistema anterior; el admin actual usa
+`slate-*`/`navy`/`primary`/`amber`. Lo vigente es §11.1. `CitasAdmin` ya no usa ningún
+token `ink-*`/`bone-*`/`terracotta-*`/`cream-*`.
 
 ### 11.5 Reglas que siguen vigentes para todo el proyecto
 
 - **Idioma de la UI: español.** No lo traduzcas.
-- Dark only. **No hay light mode ni theme switcher, en ninguna zona.**
+- **Light mode en el admin, dark en el público.** El admin usa tema claro crema;
+  el público conserva su dark. **No hay theme switcher** en ninguna zona.
 - Textos `Lorem ipsum` y datos de ejemplo son placeholders, no contenido final.
 - El sitio público conserva su sistema visual anterior. No lo "normalices" al
   nuevo sin que el usuario lo pida (§17).
@@ -901,17 +958,22 @@ compilado hasta que se use.
 ### 11.6 Accesibilidad (estado actual, no ideal)
 
 **Resuelto en el rediseño del admin:**
-- Foco visible por teclado en botones, enlaces de nav e inputs del admin (anillo brass).
-- Todos los inputs de los tres Forms tienen `<label htmlFor>` + `id` reales.
+- Foco visible por teclado en botones, enlaces de nav e inputs del admin.
+- Todos los inputs de los Forms (`ServicioForm`, `ProductoForm`, `BarberoForm`,
+  `CitaManualForm`) tienen `<label htmlFor>` + `id` reales.
 - Los dos switches (en `BarberosAdmin` y `BarberoForm`) tienen `role="switch"` +
   `aria-checked`.
-- Los botones de estado de `CitasAdmin` llevan `aria-pressed`; el de la cita
-  seleccionada lleva `aria-current`.
-- Las listas de citas usan `<ol>`/`<li>`/`<button>` semánticos.
+- Los tabs de estado de `CitasAdmin` son un `role="group"` con `aria-pressed` en cada
+  botón (no un `tablist` sin `tabpanel`, que sería ARIA incompleto).
+- El toggle de vista de `CitasAdmin` también usa `aria-pressed`; los botones de navegación
+  de fecha llevan `aria-label` y el de hoy lleva `aria-current="date"`.
+- Los `<img>` de barbero en la tabla de citas llevan `alt={nombre}`.
 
 **Pendiente (no lo escales sin consultarlo, pero no lo empeores):**
-- El `<img>` de preview de los tres modales sigue **sin `alt`**.
-- Sin `aria-live` en los mensajes de error ni en los estados de carga.
+- El `<img>` de preview de los tres modales old school sigue **sin `alt`**.
+- Sin `aria-live` en los mensajes de error ni en los estados de carga. `CitasAdmin`
+  usa `role="alert"` en el banner de error de escritura (parcial, no es `aria-live`).
+- La barra de búsqueda del topbar es decorativa: no filtra nada.
 - La navegación de la landing son `<a href="#">`, sin `aria-current`.
 - El sitio público no tiene labels asociados en sus inputs.
 - `setAddon` en `BookingPage` sigue declarado y sin usar (§18).
@@ -929,26 +991,30 @@ Sin `tailwind.config.js`: los breakpoints son los **defaults de Tailwind v4**
 valores personalizados. No hay light mode ni theme switcher, y no se han añadido
 librerías visuales ni de UI: el layout es Tailwind inline y nada más.
 
-### 12.1 Dashboard `/admin` (sistema actual)
+### 12.1 Dashboard `/admin` (sistema crema actual)
 
 | Patrón | Dónde |
 |---|---|
-| `min-h-screen bg-ink-950 lg:flex` | raíz del shell en `AdminDashboard` |
+| `min-h-screen bg-cream-50 lg:flex` | raíz del shell en `AdminDashboard` |
 | `lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:shrink-0` | rail lateral en desktop |
 | `border-b … lg:border-b-0 lg:border-r` | el `<aside>` es barra superior en `<lg` y rail en `lg+` |
+| `border-cream-300` | bordes del sidebar |
+| `bg-cream-100` | fondo del sidebar |
 | `flex gap-1 overflow-x-auto … lg:flex-col lg:overflow-visible` | nav en fila con scroll horizontal en móvil, columna en `lg+` |
 | `lg:hidden` / `hidden lg:block` | logout: versión móvil en la barra superior, versión desktop al pie del rail |
 | `min-w-0 flex-1 p-4 lg:p-8` + `mx-auto max-w-6xl` | `main` y su contenedor de ancho máximo |
-| `grid gap-6 lg:grid-cols-3` + `lg:col-span-2` | `CitasAdmin` (rail + panel) |
-| `sm:grid-cols-[6.5rem_minmax(0,1fr)]` | filas de definición del panel de detalle |
-| `grid-cols-2 sm:grid-cols-4` | tarjetas de `ResumenPage` |
+| `grid gap-4 lg:grid-cols-3` | panel inferior de `CitasAdmin` (sillones / distribución / recordatorios) |
+| `grid grid-cols-2 gap-4 lg:grid-cols-4` | las 4 métricas de `CitasAdmin` |
+| `overflow-x-auto` + `min-w-[900px]` en la `<table>` | las 7 columnas de citas no entran en móvil: la tabla hace scroll horizontal en vez de deformarse |
+| `flex flex-wrap items-center gap-2` | fila de controles de `CitasAdmin` (fecha, barbero, toggle) |
+| `grid grid-cols-2 sm:grid-cols-4` | tarjetas de `ResumenPage` |
 | `flex flex-wrap … sm:flex-nowrap` + `w-full justify-end sm:w-auto` | filas de los CRUD: las acciones bajan de línea en móvil |
 | `truncate` + `min-w-0 flex-1` + `shrink-0` en el bloque de precio/fecha | antioverflow horizontal en listas |
-| `h-fit lg:sticky lg:top-8` | panel de detalle de `CitasAdmin` |
-| `w-12 sm:w-16` | columna de hora en el rail, ancho fijo para alinear |
-| `max-h-[90vh] overflow-y-auto` + `w-full max-w-md` | los tres modales |
+| `max-h-[90vh] overflow-y-auto` + `w-full max-w-md` | los tres modales + `CitaManualForm` |
 | `p-5 sm:p-6`, `gap-3 sm:gap-4`, `px-4 sm:px-5`, `h-12 sm:h-14` | padding y tamaño escalonados en todo el admin |
-| `grid gap-4 sm:grid-cols-2` | Costo/Duración en `ServicioForm` |
+| `grid gap-4 sm:grid-cols-2` | Costo/Duración en `ServicioForm`, y teléfono/correo + fecha/hora + barbero/total en `CitaManualForm` |
+| `overflow-x-auto` + `min-w-[760px]` en la `<table>` | la tabla de `ServiciosAdmin` (5 columnas) también hace scroll horizontal en móvil |
+| `grid grid-cols-2 gap-4 lg:grid-cols-3` | las 3 métricas de `ServiciosAdmin` (la 3ª ocupa `col-span-2 lg:col-span-1`) |
 
 El shell del admin **sí es responsive** (antes el `<aside className="w-64">` era fijo
 y el admin era inutilizable en móvil — eso quedó resuelto).
@@ -1128,7 +1194,7 @@ rediseño visual ni de ningún trabajo no solicitado.** Reglas:
 - Si te piden arreglarlos, es un task aparte: mueve la función **arriba** del
   `useEffect` o conviértela en `function` declaration / `useCallback`.
 
-**Verificado durante el rediseño visual del admin (5 etapas).** En cada etapa se
+**Verificado durante el rediseño visual del admin (6 etapas).** En cada etapa se
 ejecutó `pnpm lint` después de los cambios y el resultado se mantuvo **exactamente
 en estos 7 errores, mismos archivos, mismas reglas, 0 errores nuevos**:
 
@@ -1139,8 +1205,12 @@ en estos 7 errores, mismos archivos, mismas reglas, 0 errores nuevos**:
 | 3 | `ServiciosAdmin.jsx`, `ProductosAdmin.jsx`, `BarberosAdmin.jsx` | 7 / 0 nuevos |
 | 4 | `src/pages/admin/CitasAdmin.jsx` | 7 / 0 nuevos |
 | 5 | `ServicioForm.jsx`, `ProductoForm.jsx`, `BarberoForm.jsx` | 7 / 0 nuevos |
+| 6 | `src/index.css` (tokens crema/terracota) + todos los archivos admin | 7 / 0 nuevos |
+| 7 | `CitasAdmin.jsx` (reescrito) + `CitaManualForm.jsx` (nuevo) | 7 / 0 nuevos |
+| 8 | `ServiciosAdmin.jsx`, `ServicioForm.jsx` | 7 / 0 nuevos |
+| 9 | `ProductoForm.jsx`, `BarberoForm.jsx`, `ProductosAdmin.jsx` (prop), `src/index.css` (`--font-sans` + antialiasing) | 7 / 0 nuevos |
 
-`pnpm build` terminó correctamente en las 5 etapas, sin errores de compilación de
+`pnpm build` terminó correctamente en las 6 etapas, sin errores de compilación de
 clases Tailwind.
 
 ### 15.2 Checklist manual por área
@@ -1229,10 +1299,13 @@ operación destructiva de git, pregunta.
   consultas, los formularios y la UI.
 - **No cambies el bucket `imagenes`** ni las carpetas `servicios/`, `productos/`,
   `barberos/`. No lo hagas privado sin migrar las URLs ya guardadas.
-- **No introduzcas RLS, políticas, vistas, funciones SQL ni triggers** sin autorización
-  explícita. **Este proyecto hoy no usa RLS y depende de ello**: el sitio público
-  inserta en `citas` con la clave publicable desde el navegador. Añadir RLS sin planear
-  los roles `anon` romperá el agendamiento público.
+- **No introduzcas políticas de RLS, vistas, funciones SQL ni triggers** sin autorización
+  explícita. **Las 4 tablas YA tienen RLS habilitado** con las políticas de §10.5: no es
+  opcional ni se puede "quitar". Dos trampas concretas: (1) el sitio público inserta en
+  `citas` con la clave publicable desde el navegador, así que **cualquier política sobre
+  `citas` debe seguir admitting `INSERT` a `anon`** o se rompe el agendamiento público;
+  (2) el panel va autenticado, así que **cualquier tabla que el panel escriba necesita una
+  política `authenticated`** o el `update` falla en silencio.
 - **No metas claves de servicio (`service_role`) en el frontend.** Todo es
   cliente-side por diseño.
 - **No cambies el payload de `citas`** sin actualizar a la vez `CitasAdmin` (que lee
@@ -1258,10 +1331,12 @@ anterior (`neutral-*`, `sky-500`, `emerald`, `amber`, `yellow`) y **no se
 "normalizó" al nuevo**: esa costura es conocida y solo se cierra si el usuario lo
 pide.
 
-- **El dashboard usa `ink-*` / `bone-*` / `brass-*`** (§11.1). `brass` es el único
+- **El dashboard usa `cream-*` / `coffee-*` / `terracotta-*` / `sage-*` / `muted-blue-*` / `danger-*`** (§11.1). `terracotta` es el único
   acento interactivo del admin: acción primaria, indicador de ruta activa y foco.
 - **No reintroduzcas `sky`, `emerald` ni `amber` como acentos del admin.** Ya no
   tienen ningún uso dentro de `src/pages/admin/`. Si los ves ahí, es un bug.
+- **No reintroduzcas `ink-*` ni `bone-*` ni `cream-*` ni `coffee-*` en el admin.** Las paletas anteriores fueron completamente reemplazadas. El admin usa el sistema actual (§11).
+- **No reintroduzcas `terracotta-*`, `sage-*`, `muted-blue-*`, `cancelled-*`, `danger-*`.** El esquema anterior se completó; el admin usa el esquema `slate/primary/amber/navy`.
 - **No introduzcas gradients, glow, glassmorphism, sombras fuertes ni pills grandes
   de color** en el admin (§11.4). Si crees que hace falta una, es una **decisión de
   diseño explícita**: pregunta primero.
@@ -1322,9 +1397,23 @@ arreglar de paso:**
 | 17 | Todo el repo | Textos `Lorem ipsum` y placeholders de marca sin sustituir. |
 | 18 | ~~`ResumenPage.jsx:62`~~ | **RESUELTO** en el rediseño: se eliminó el `<p className="text-2xl mb-2">{t.icono}</p>`, que renderizaba vacío porque `tarjetas` nunca define `icono`. |
 | 19 | `BookingPage.jsx:32` | Inconsistencia de formato de hora: `'18:30 PM'` (PM con hora de 24h); el resto usa `'10:00 AM'`, `'11:50 AM'`, `'12:40 PM'`. |
-| 20 | `src/index.css` (`@theme`) | **Token semánticamente sobrecargado:** `cancelada` (`#B5645A`) representa a la vez el estado "cancelada" de una cita (nodo del rail, etiqueta) y las acciones destructivas ("Eliminar" en los CRUD, mensajes de error de los Forms). Debería separarse en un token de estado y otro de peligro. **Pendiente, no lo arregles por tu cuenta.** |
-| 21 | `LoginPage.jsx` | Mantiene el tema anterior (`neutral-*`) mientras el admin usa `ink/bone/brass`. Los inputs se ven distintos al entrar al panel. Costura conocida del rediseño, documentada en §11. |
-| 22 | `BookingPage` vs `CitasAdmin` | El rail de citas usa `font-serif` + `tabular-nums` y el wizard público no. Consecuencia de que sean dos sistemas visuales; no lo unifiques sin decidir lo del punto 21. |
+| 20 | `src/index.css` (`@theme`) | **RESUELTO** en el rediseño: se añadió `danger-400` (`#C04A3A`) para acciones destructivas, separando del estado `cancelada` (`cancelled-400`). |
+| 21 | `LoginPage.jsx` | Mantiene el tema anterior (`neutral-*`) mientras el admin usa `slate/primary/navy`. Los inputs se ven distintos al entrar al panel. Costura conocida del rediseño, documentada en §11. |
+| 22 | ~~`BookingPage` vs `CitasAdmin`~~ | **RESUELTO**: la nueva tabla de citas usa `font-serif` + `tabular-nums` en la columna de hora, igual que el wizard público. |
+| 23 | `BookingPage.handleConfirmar` | **Falla en silencio contra la BD.** `citas.hora` es una columna `time without time zone` y el wizard manda `'11:50 AM'`; Postgres no puede castear eso a `time`. Como el código revisa el `error`, la pantalla muestra "Algo salió mal", pero la cita no se agenda. Las 4 filas que hay en la tabla sí provienen de un insert válido (`'11:50:00'`). **No lo arregles sin avisar**: arreglarlo es cambiar el payload del flujo público, y además `BookingPage` fija la fecha a septiembre 2026 (§18.1). |
+| 24 | `citas` (modelo) | No hay columnas de pago. El botón "Cobrar" de `CitasAdmin` cierra la cita como `completada`; un registro real de cobro necesita `pagado`/`metodo_pago`/`cobrado_at`. |
+| 25 | ~~sillones~~ | **DESCARTADO por el usuario**: `barberos.sillon_numero` / `sillon_nombre` existen en la BD pero `CitasAdmin` no los usa (ni badge, ni tarjeta, ni columna, ni % de ocupación). La gestión de sillones quedó en la página de Barberos, si es que algún día se retoma. |
+| 26 | `CitasAdmin` — vista calendario | Placeholder navegable. Falta el modelo de horarios/slots y la detección de solapamientos (sigue sin haber forma de impedir dos citas en el mismo horario, §18.6). |
+| 27 | `CitasAdmin` — recordatorios | Tarjeta estática con botones deshabilitados. Falta proveedor de mensajería, Edge Function con las plantillas y la regla de disparo (H-24 / H-2). |
+| 28 | `citas.barbero_id` | Existe en la BD, pero **las 4 filas actuales lo tienen en `null`**, así que la columna Barbero sale en "Sin asignar" hasta que se asigne desde "Reprogramar" o desde el alta manual. |
+| 29 | `citas` (RLS) | **RESUELTO**: se agregó la política `Admin escribe` para `authenticated` (§10.5). Antes toda escritura del panel sobre `citas` fallaba en silencio. |
+| 30 | `CitasAdmin` — tag VIP | No existe el criterio para "Club Noble" ni ningún campo VIP en `citas`. Omitido a propósito; no lo inventes. |
+| 31 | ~~Tokens del tema viejo en el admin~~ | **RESUELTO**: `src/pages/admin/` ya no usa ninguna clase `cream-*`, `coffee-*`, `terracotta-*`, `danger-*`, `ink-*`, `bone-*`, `brass-*`, `sage-*`, `muted-blue-*` ni `cancelled-*`. Los cuatro formularios están en tema claro (§9.4). Verificado con grep sobre el prefijo de clase real, no por substring (`shrink-` y `message-` dan falsos positivos con `ink-`/`sage-`). |
+| 32 | `servicios.duracion` | Es TEXT y no tiene CHECK: conviven `'30'` (dato actual) y textos tipo `'50 min'`. `ServiciosAdmin.aMinutos()` normaliza para promediar y mostrar, y el formulario ya guarda minutos pelados (`type="number"`). El `servicio.costo` es `numeric`, no `precio` como en productos. |
+| 33 | `servicios.descripcion` | La fila "Corte de Cabello" la tiene vacía. La tabla muestra "Sin descripción" en `slate-400` en vez de una celda en blanco que parece un bug. |
+| 34 | `BarberosAdmin.CAPACIDAD_SLOTS_ESTIMADA` | Es una constante inventada (`= 8`) para "slots por barbero por día". Alimenta la métrica "Capacidad operativa" y la barra de citas de hoy de cada tarjeta. Está marcada como dato de ejemplo en el código; hace falta un modelo real de horarios/slots para que el número signifique algo. |
+| 35 | `ResumenPage.getAccentBarbero(i)` | Muestra **"Barbero N°{i + 1}"** inventado por índice de fila en la tabla de citas de hoy, y un color por posición. No lee `citas.barbero_id` aunque la columna exista. En un panel con datos reales eso es un dato falso, no un placeholder. |
+| 36 | `ProductosAdmin` — ícono "Ver" y "Contactar proveedor →" | Botones sin `onClick` y un `<a href="#">`. Son controles muertos: el mismo problema que se resolvió en `ServiciosAdmin` (donde "Ver" abre el form en `soloLectura`). |
 
 ---
 

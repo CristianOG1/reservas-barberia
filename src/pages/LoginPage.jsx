@@ -23,7 +23,7 @@ export default function LoginPage() {
 
     if (esRegistro) {
       // Registrar nuevo usuario en Supabase
-      const { data, error: registerError } = await supabase.auth.signUp({
+      const { error: registerError } = await supabase.auth.signUp({
         email,
         password,
         options: {
