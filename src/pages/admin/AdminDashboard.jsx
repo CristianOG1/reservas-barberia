@@ -18,7 +18,7 @@ const iconoNav = {
 }
 
 export default function AdminDashboard() {
-  const { logout } = useAuth()
+  const { session, logout } = useAuth()
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -68,24 +68,26 @@ export default function AdminDashboard() {
 
         {/* Perfil + logout */}
         <div className="border-t border-slate-200 p-4">
-          {/* <div className="mb-3 rounded-lg bg-slate-100 p-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-navy text-white text-sm font-semibold">
-                A
+          {session && (
+            <div className="mb-3 rounded-lg bg-slate-100 p-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-navy text-white text-sm font-semibold">
+                  {session.user?.email?.charAt(0).toUpperCase() || '?'}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-navy">{session.user?.email}</p>
+                  <p className="text-xs text-slate">Administrador</p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-navy">admin@kromatik.com</p>
-                <p className="text-xs text-slate">Administrador</p>
+              <div className="mt-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-xs text-slate">
+                  <span className="h-1.5 w-1.5 rounded-full bg-green-600" />
+                  En línea
+                </span>
+                <span className="text-xs text-slate">v1.0</span>
               </div>
             </div>
-            <div className="mt-2 flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-xs text-slate">
-                <span className="h-1.5 w-1.5 rounded-full bg-green-600" />
-                En línea
-              </span>
-              <span className="text-xs text-slate">v1.0</span>
-            </div>
-          </div> */}
+          )}
           <button
             onClick={logout}
             className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate transition-colors hover:bg-slate-100 hover:text-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
