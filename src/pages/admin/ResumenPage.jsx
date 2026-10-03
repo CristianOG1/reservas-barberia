@@ -1,6 +1,7 @@
 // src/pages/admin/ResumenPage.jsx
 import { useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
+import { useConfirmarCita } from '../../hooks/useConfirmarCita'
 
 /* ========= DATOS DE EJEMPLO — reemplazar con lógica real ========= */
 
@@ -44,11 +45,6 @@ function getBadgeEstado(estado) {
   }
 }
 
-function getAccentBarbero(i) {
-  const colores = ['bg-primary', 'bg-amber', 'bg-green-600', 'bg-red-600']
-  return colores[i % colores.length]
-}
-
 function IconoReiniciar() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
@@ -71,7 +67,11 @@ export default function ResumenPage() {
   const [productos, setProductos] = useState([])
   const [popularidad, setPopularidad] = useState([])
   const [listaServicios, setListaServicios] = useState([])
+  const [listaBarberos, setListaBarberos] = useState([])
   const [cargando, setCargando] = useState(true)
+  const [errorMsg, setErrorMsg] = useState(null)
+  // Lógica de confirmación compartida con Gestión de Citas (§hook).
+  const confirmarCita = useConfirmarCita(setCitasSemana, setErrorMsg)
 
   useEffect(() => {
     cargarDatos()
@@ -79,20 +79,22 @@ export default function ResumenPage() {
 
   const cargarDatos = async () => {
     // count: 'exact', head: true → solo trae el número, no las filas
-    const [serviciosRes, productosRes, barberos, citasRes] = await Promise.all([
+    const [serviciosRes, productosRes, barberosActivos, citasRes, barberosRes] = await Promise.all([
       supabase.from('servicios').select('*'),
       supabase.from('productos').select('*', { count: 'exact', head: true }),
       supabase.from('barberos').select('*', { count: 'exact', head: true }).eq('disponible', true),
       supabase.from('citas').select('*', { count: 'exact', head: true }),
+      supabase.from('barberos').select('*').order('created_at', { ascending: true }),
     ])
 
     setTotales({
       servicios: serviciosRes.data?.length ?? 0,
       productos: productosRes.count || 0,
-      barberosActivos: barberos.count || 0,
+      barberosActivos: barberosActivos.count || 0,
       citas: citasRes.count || 0,
     })
     setListaServicios(serviciosRes.data || [])
+    setListaBarberos(barberosRes.data || [])
 
     // Próximas citas
     const hoy = HoyEntero(new Date())
@@ -142,7 +144,19 @@ export default function ResumenPage() {
   if (cargando) return <p className="text-slate-500">Cargando...</p>
 
   const hoy = HoyEntero(new Date())
-  const citasHoy = citasSemana.filter((c) => c.fecha === hoy)
+  // Citas de hoy ordenadas por hora. `hora` es de tipo `time` en la BD y llega
+  // como 'HH:MM:SS': ordenar lexicográficamente ordena cronológicamente.
+  const citasHoy = citasSemana
+    .filter((c) => c.fecha === hoy)
+    .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''))
+
+  // Lookup del barbero asignado a cada cita, mismo join por `barbero_id` que usa
+  // CitasAdmin. Hoy todas las citas del usuario tienen `barbero_id` nulo: cae en
+  // "Sin asignar".
+  const barberoDe = (cita) => listaBarberos.find((b) => b.id === cita.barbero_id) || null
+
+  // `citas.hora` llega como 'HH:MM:SS'; se muestra 'HH:MM' (igual que CitasAdmin).
+  const formatearHora = (valor) => (valor ? String(valor).slice(0, 5) : '—')
 
   const metricas = [
     {
@@ -261,6 +275,12 @@ export default function ResumenPage() {
             </div>
           </div>
 
+          {errorMsg && (
+            <p role="alert" className="mx-5 mt-4 rounded-lg border border-red-600/30 bg-red-50 px-4 py-2.5 text-sm text-red-600">
+              {errorMsg}
+            </p>
+          )}
+
           {citasHoy.length === 0 ? (
             <div className="px-5 py-12 text-center">
               <p className="text-sm text-slate-500">No hay citas agendadas para hoy.</p>
@@ -278,10 +298,12 @@ export default function ResumenPage() {
                 </tr>
               </thead>
               <tbody>
-                {citasHoy.slice(0, 6).map((c, i) => (
+                {citasHoy.slice(0, 6).map((c) => {
+                  const barberoAsignado = barberoDe(c)
+                  return (
                   <tr key={c.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                     <td className="px-5 py-3.5">
-                      <p className="font-serif text-sm text-navy">{c.hora}</p>
+                      <p className="font-serif text-sm tabular-nums text-navy">{formatearHora(c.hora)}</p>
                       <p className="text-xs text-slate">{c.fecha}</p>
                     </td>
                     <td className="px-5 py-3.5">
@@ -302,10 +324,25 @@ export default function ResumenPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2">
-                        <span className={`h-2 w-2 rounded-full ${getAccentBarbero(i)}`} />
-                        <span className="text-sm text-slate">Barbero N°{i + 1}</span>
-                      </div>
+                      {barberoAsignado ? (
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
+                            {barberoAsignado.imagen ? (
+                              <img src={barberoAsignado.imagen} alt={barberoAsignado.nombre} className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-400">
+                                {barberoAsignado.nombre?.charAt(0) || '?'}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-sm text-navy">{barberoAsignado.nombre}</p>
+                            <p className="text-xs text-slate">{barberoAsignado.especialidad || 'Sin especialidad'}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-slate-400">Sin asignar</span>
+                      )}
                     </td>
                     <td className="px-5 py-3.5">
                       <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${getBadgeEstado(c.estado)}`}>
@@ -313,12 +350,23 @@ export default function ResumenPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <button className="text-sm text-primary hover:underline focus-visible:outline-none">
-                        Ver
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {((c.estado || 'pendiente') === 'pendiente') && (
+                          <button
+                            onClick={() => confirmarCita(c)}
+                            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#1a38a0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                          >
+                            Confirmar
+                          </button>
+                        )}
+                        <button className="text-sm text-primary hover:underline focus-visible:outline-none">
+                          Ver
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           )}

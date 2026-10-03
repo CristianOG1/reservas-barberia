@@ -230,6 +230,14 @@ export default function ServiciosAdmin() {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={exportarCarta}
+            disabled={serviciosFiltrados.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40"
+          >
+            <IconoExportar />
+            Exportar Carta
+          </button>
+          <button
             onClick={abrirNuevo}
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#1a38a0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >

@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import CitaManualForm from './CitaManualForm'
+import { useConfirmarCita } from '../../hooks/useConfirmarCita'
 
 /* ============================================================
    1. UTILIDADES DE FECHA, HORA Y CATÁLOGO
@@ -249,6 +250,9 @@ export default function CitasAdmin() {
   const [mostrarForm, setMostrarForm] = useState(false)
   const [citaEditando, setCitaEditando] = useState(null)
 
+  // Lógica de confirmación compartida con Resumen: optimistic update + revert (§).
+  const confirmarCita = useConfirmarCita(setCitas, setErrorMsg)
+
   // `new Date()` dentro del render es una función impura (react-hooks/purity): da
   // resultados distintos en cada render. Se congela una sola vez al montar, así
   // "hoy", "ahora" y la semana no se mueven a media sesión.
@@ -393,6 +397,13 @@ export default function CitasAdmin() {
             // plantilla por WhatsApp depende del servicio de mensajería (§ tarjeta
             // de recordatorios), todavía inexistente.
             accion: () => window.open(`tel:${cita.telefono}`, '_self'),
+          },
+          {
+            k: 'confirmar',
+            etiqueta: 'Confirmar',
+            clase: 'primario',
+            icono: <IconoCheck />,
+            accion: () => confirmarCita(cita),
           },
           {
             k: 'cancelar',

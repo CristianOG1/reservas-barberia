@@ -790,10 +790,43 @@ Tipos de columna que importan para el cliente:
 
 - `citas.fecha` es `date` → llega como `'YYYY-MM-DD'` y se compara lexicográficamente.
 - `citas.hora` es `time without time zone` → llega como `'HH:MM:SS'`, **no** `'10:00 AM'`.
-  Los `<input type="time">` sí son válidos contra esa columna; los textos con AM/PM que
-  manda `BookingPage` no lo son (§18, punto 23).
+  Insertar `'11:50 AM'` **falla**: Postgres no puede castearlo a `time`. Mandar siempre
+  `'HH:MM'` (24 h); el AM/PM es solo presentación.
+- `citas.estado` tiene **default `'pendiente'`**: el insert del sitio público no lo envía.
 - `citas.total`, `servicios.costo` y `servicios.duracion` son `numeric`/`text`: castear
   con `Number()` antes de sumar o comparar.
+
+#### Función RPC `horas_ocupadas` (migración `rpc_horas_ocupadas`)
+
+```sql
+public.horas_ocupadas(fecha_consulta date) returns setof time
+  language sql  security definer  set search_path = public  stable
+```
+
+Devuelve **solo la columna `hora`** de las citas no canceladas de esa fecha. Existe
+porque `citas` **no** es legible por `anon` (expondría nombre, teléfono y correo), y sin
+embargo `/agendar` necesita saber qué horas están tomadas. Se llama desde el cliente con
+`supabase.rpc('horas_ocupadas', { fecha_consulta: 'YYYY-MM-DD' })`.
+
+- `revoke all … from public` + `grant execute … to anon, authenticated`: sin esto,
+  cualquier rol nuevo podría ejecutarla.
+- Devuelve `'HH:MM:SS'`; el cliente recorta a `'HH:MM'` con `.slice(0, 5)`.
+
+#### Índice único parcial `citas_slot_unico` (migración `slot_unico_por_fecha_hora`)
+
+```sql
+create unique index citas_slot_unico on public.citas (fecha, hora)
+  where coalesce(estado, 'pendiente') <> 'cancelada'
+```
+
+Bloqueo optimista: dos personas no pueden tomar el mismo slot. El insert duplicado falla
+con **`error.code === '23505'`**, que `BookingPage` traduce a "Ese horario acaba de ser
+tomado, elige otro" + refresco de las horas ocupadas.
+
+⚠ La misma migración tuvo que **cancelar una fila duplicada** (2025-09-30 11:50, dos
+citas 'pendiente') porque Postgres no puede crear el índice con el conflicto. **No se
+borró**: la fila sigue existiendo con `estado = 'cancelada'`. Cualquier intento de
+recrear el índice con datos duplicados fallará otra vez.
 
 ---
 
@@ -933,7 +966,7 @@ comparten por lo tanto las **mismas dos pilas del sistema**:
 - **Sin gradients.** Ningún `bg-gradient-*`, ni `linear-gradient`, ni washes decorativos.
 - **Sin glow.** Ningún `drop-shadow-*`, ni halo, ni resplandor en el acento.
 - **Sin glassmorphism** ni fondos translúcidos de cristal.
-- **Sin sombras fuertes.** Si necesitas separación, usa `border-cream-300`.
+- **Sin sombras fuertes.** Si necesitas separación, usa `border-slate-200`.
 - **Sin pills grandes de color.** El estado se comunica con nodo/punto + etiqueta.
 - **Sin animaciones innecesarias.** Nada de pulso, rebote, entradas animadas ni hover en
   cada tarjeta. Lo único que se mueve es un `transition-colors` en hover/focus de
@@ -949,7 +982,7 @@ token `ink-*`/`bone-*`/`terracotta-*`/`cream-*`.
 ### 11.5 Reglas que siguen vigentes para todo el proyecto
 
 - **Idioma de la UI: español.** No lo traduzcas.
-- **Light mode en el admin, dark en el público.** El admin usa tema claro crema;
+- **Light mode en el admin, dark en el público.** El admin usa tema claro;
   el público conserva su dark. **No hay theme switcher** en ninguna zona.
 - Textos `Lorem ipsum` y datos de ejemplo son placeholders, no contenido final.
 - El sitio público conserva su sistema visual anterior. No lo "normalices" al
@@ -970,7 +1003,6 @@ token `ink-*`/`bone-*`/`terracotta-*`/`cream-*`.
 - Los `<img>` de barbero en la tabla de citas llevan `alt={nombre}`.
 
 **Pendiente (no lo escales sin consultarlo, pero no lo empeores):**
-- El `<img>` de preview de los tres modales old school sigue **sin `alt`**.
 - Sin `aria-live` en los mensajes de error ni en los estados de carga. `CitasAdmin`
   usa `role="alert"` en el banner de error de escritura (parcial, no es `aria-live`).
 - La barra de búsqueda del topbar es decorativa: no filtra nada.
@@ -1142,7 +1174,7 @@ pnpm dev         # smoke test manual en el navegador
 `pnpm lint` **falla en el estado actual del repo** con:
 
 ```
-✖ 7 problems (7 errors, 0 warnings)
+✖ 6 problems (6 errors, 0 warnings)
 ```
 
 **Desglose exacto por archivo y regla:**
@@ -1150,22 +1182,19 @@ pnpm dev         # smoke test manual en el navegador
 1. `src/context/AuthContext.jsx`
    * regla: `react-refresh/only-export-components`
    * 1 error (el archivo exporta `AuthProvider` y `useAuth`)
-2. `src/pages/BookingPage.jsx`
-   * regla: `no-unused-vars`
-   * 1 error (`setAddon` declarado y nunca llamado, §18)
-3. `src/pages/admin/BarberosAdmin.jsx`
+2. `src/pages/admin/BarberosAdmin.jsx`
    * regla: `react-hooks/immutability`
    * 1 error (`cargarBarberos` accessed before it is declared)
-4. `src/pages/admin/CitasAdmin.jsx`
+3. `src/pages/admin/CitasAdmin.jsx`
    * regla: `react-hooks/immutability`
    * 1 error (`cargarCitas` accessed before it is declared)
-5. `src/pages/admin/ProductosAdmin.jsx`
+4. `src/pages/admin/ProductosAdmin.jsx`
    * regla: `react-hooks/immutability`
    * 1 error (`cargarProductos` accessed before it is declared)
-6. `src/pages/admin/ResumenPage.jsx`
+5. `src/pages/admin/ResumenPage.jsx`
    * regla: `react-hooks/immutability`
    * 1 error (`cargarDatos` accessed before it is declared)
-7. `src/pages/admin/ServiciosAdmin.jsx`
+6. `src/pages/admin/ServiciosAdmin.jsx`
    * regla: `react-hooks/immutability`
    * 1 error (`cargarServicios` accessed before it is declared)
 
@@ -1175,14 +1204,18 @@ Totales:
 |---|---|
 | `react-hooks/immutability` | 5 |
 | `react-refresh/only-export-components` | 1 |
-| `no-unused-vars` | 1 |
-| **Total** | **7 errores, 0 warnings** |
+| **Total** | **6 errores, 0 warnings** |
+
+📉 **La línea base bajó de 7 a 6** al conectar `/agendar` a Supabase (2026-10): se
+eliminó el estado `addon` de `BookingPage.jsx` porque la página ya no ofrece add-on
+(§18.2), y con él su `no-unused-vars`. Fue un cambio **pedido explícitamente**, no un
+"arreglo de paso". `BookingPage.jsx` ahora tiene **0 errores**.
 
 Los 5 de `react-hooks/immutability` comparten el mismo mensaje,
 *"Cannot access variable before it is declared"*: el patrón
 `useEffect(() => { cargarX() }, [])` invoca una función declarada después con
-`const`. Por eso **`src/pages/admin/AdminDashboard.jsx` y los tres `*Form` tienen
-0 errores** y no aparecen en la lista.
+`const`. Por eso **`src/pages/admin/AdminDashboard.jsx`, los `*Form` y
+`src/pages/BookingPage.jsx` tienen 0 errores** y no aparecen en la lista.
 
 **Estos errores son baseline preexistente. NO deben corregirse como parte del
 rediseño visual ni de ningún trabajo no solicitado.** Reglas:
@@ -1378,12 +1411,12 @@ arreglar de paso:**
 
 | # | Ubicación | Estado |
 |---|---|---|
-| 1 | `BookingPage.jsx:62` | Fecha fija a `2026-09-${numero}`; `dias` son 21–27 fijos; encabezado "Septiembre 2026". Hay un TODO del autor. |
-| 2 | `BookingPage.jsx:43` | `setAddon` declarado y nunca llamado → `addon` siempre `false`, sin UI, pero el cálculo (`+250`) y la columna existen. |
+| 1 | ~~`BookingPage.jsx:62`~~ | **RESUELTO** (2026-10): la fecha se calcula en hora local con `FechaISO()` y se guarda como `'YYYY-MM-DD'`. |
+| 2 | ~~`BookingPage.jsx:43`~~ | **RESUELTO** (2026-10): se eliminó el estado `addon` y el `+250`. El total es solo el `costo` del servicio y la columna `addon` ya no se envía. |
 | 3 | `Servicios.jsx:70` → `BookingPage` | `?servicio=` se navega pero no se lee (sin `useSearchParams`). |
-| 4 | `BookingPage.jsx:157,169` | Renderiza `s.etiqueta` y `s.duracion`, campos que no existen en el array local. |
-| 5 | `BookingPage.jsx` | El wizard **no** consulta la tabla `servicios`: los 2 servicios y todos los horarios son constantes hardcodeadas. |
-| 6 | `citas.servicio` | Texto plano, no FK → se pueden agendar servicios inexistentes. **No hay comprobación de agenda ocupada**: nada impide reservar dos citas en el mismo horario. |
+| 4 | ~~`BookingPage.jsx:157,169`~~ | **RESUELTO** (2026-10): la tarjeta usa `categoria` (antes `s.etiqueta`), `formatoDuracion(s.duracion)` y `Number(s.costo)`, todo desde la tabla real. |
+| 5 | ~~`BookingPage.jsx`~~ | **RESUELTO** (2026-10): el paso 1 consulta `servicios` (`nombre, categoria, descripcion, costo, duracion, imagen`), con estado de carga y vacío ("Aún no hay servicios disponibles"). |
+| 6 | `citas.servicio` | Sigue siendo texto plano, no FK → se pueden agendar servicios inexistentes desde otras vías. **Lo de la agenda ocupada sí se resolvió**: RPC `horas_ocupadas` + índice único `citas_slot_unico` (§10.5). Lo que **no** hay es un modelo de horarios/slots: las franjas siguen siendo constantes hardcodeadas en `BLOQUES`. |
 | 7 | ~~`AdminDashboard.jsx:18`~~ | **RESUELTO** en el rediseño: el `<aside>` fijo `w-64` pasó a ser barra superior en `<lg` y rail en `lg+`, sin `useState`. Ver §12.1. |
 | 8 | `Navbar.jsx` | Links `href="#"`; sin menú móvil; sin scroll a secciones (las secciones no tienen `id`). **No lo toques como parte del rediseño del admin.** |
 | 9 | Todos los `cargarX()` | El `error` de Supabase se descarta; un fallo de red se ve como "lista vacía". Esto afecta también a los estados vacíos del admin, que son sobrios a propósito para no mentir cuando la petición falló. |
@@ -1400,7 +1433,7 @@ arreglar de paso:**
 | 20 | `src/index.css` (`@theme`) | **RESUELTO** en el rediseño: se añadió `danger-400` (`#C04A3A`) para acciones destructivas, separando del estado `cancelada` (`cancelled-400`). |
 | 21 | `LoginPage.jsx` | Mantiene el tema anterior (`neutral-*`) mientras el admin usa `slate/primary/navy`. Los inputs se ven distintos al entrar al panel. Costura conocida del rediseño, documentada en §11. |
 | 22 | ~~`BookingPage` vs `CitasAdmin`~~ | **RESUELTO**: la nueva tabla de citas usa `font-serif` + `tabular-nums` en la columna de hora, igual que el wizard público. |
-| 23 | `BookingPage.handleConfirmar` | **Falla en silencio contra la BD.** `citas.hora` es una columna `time without time zone` y el wizard manda `'11:50 AM'`; Postgres no puede castear eso a `time`. Como el código revisa el `error`, la pantalla muestra "Algo salió mal", pero la cita no se agenda. Las 4 filas que hay en la tabla sí provienen de un insert válido (`'11:50:00'`). **No lo arregles sin avisar**: arreglarlo es cambiar el payload del flujo público, y además `BookingPage` fija la fecha a septiembre 2026 (§18.1). |
+| 23 | ~~`BookingPage.handleConfirmar`~~ | **RESUELTO** (2026-10): se manda `hora` en 24 h (`'HH:MM'`), que sí castea a `time`. El agendamiento público volvió a funcionar. |
 | 24 | `citas` (modelo) | No hay columnas de pago. El botón "Cobrar" de `CitasAdmin` cierra la cita como `completada`; un registro real de cobro necesita `pagado`/`metodo_pago`/`cobrado_at`. |
 | 25 | ~~sillones~~ | **DESCARTADO por el usuario**: `barberos.sillon_numero` / `sillon_nombre` existen en la BD pero `CitasAdmin` no los usa (ni badge, ni tarjeta, ni columna, ni % de ocupación). La gestión de sillones quedó en la página de Barberos, si es que algún día se retoma. |
 | 26 | `CitasAdmin` — vista calendario | Placeholder navegable. Falta el modelo de horarios/slots y la detección de solapamientos (sigue sin haber forma de impedir dos citas en el mismo horario, §18.6). |
@@ -1414,6 +1447,7 @@ arreglar de paso:**
 | 34 | `BarberosAdmin.CAPACIDAD_SLOTS_ESTIMADA` | Es una constante inventada (`= 8`) para "slots por barbero por día". Alimenta la métrica "Capacidad operativa" y la barra de citas de hoy de cada tarjeta. Está marcada como dato de ejemplo en el código; hace falta un modelo real de horarios/slots para que el número signifique algo. |
 | 35 | `ResumenPage.getAccentBarbero(i)` | Muestra **"Barbero N°{i + 1}"** inventado por índice de fila en la tabla de citas de hoy, y un color por posición. No lee `citas.barbero_id` aunque la columna exista. En un panel con datos reales eso es un dato falso, no un placeholder. |
 | 36 | `ProductosAdmin` — ícono "Ver" y "Contactar proveedor →" | Botones sin `onClick` y un `<a href="#">`. Son controles muertos: el mismo problema que se resolvió en `ServiciosAdmin` (donde "Ver" abre el form en `soloLectura`). |
+| 37 | `citas.estado` (datos) | Hay una fila con `estado = 'Pendiente'` (mayúscula) creada fuera de la app. El `estado` es `text` libre, sin CHECK ni ENUM, y el admin compara `estado \|\| 'pendiente'` **de forma sensible a mayúsculas**: `CitasAdmin.accionesDe()` cae en `default` y esa fila se queda **sin botones de acción**. El índice `citas_slot_unico` y el RPC sí la tratan bien, pero la UI no. **Normaliza el dato** (`update citas set estado = 'pendiente' where estado = 'Pendiente'`) o mete un CHECK; no lo cambies sin avisar. |
 
 ---
 
