@@ -37,6 +37,17 @@ export default function Navbar() {
         </div>
       </div>
 
+      {/* Links   <a href="#" className="text-neutral-300 hover:text-white">Servicios</a>*/}
+      <div className="hidden md:flex items-center gap-8 text-sm">
+        <a href="#" className="text-white bg-neutral-800 px-4 py-2 rounded-full">Inicio</a>
+       <button
+              onClick={() => navigate('/servicios')}
+              className="text-neutral-300 hover:text-white"
+            >
+              Servicios
+      </button>
+        <a href="#" className="text-neutral-300 hover:text-white">Productos</a>
+        <a href="#" className="text-neutral-300 hover:text-white">Contacto</a>
       {/* Links de navegación */}
       <div className="hidden md:flex items-center gap-8 text-sm">
         <Link to="/" className="text-white bg-neutral-800 px-4 py-2 rounded-full">Inicio</Link>
