@@ -40,9 +40,9 @@ export default function Navbar() {
       {/* Links de navegación */}
       <div className="hidden md:flex items-center gap-8 text-sm">
         <Link to="/" className="text-white bg-neutral-800 px-4 py-2 rounded-full">Inicio</Link>
-        <a href="#servicios" className="text-neutral-300 hover:text-white transition-colors">Servicios</a>
-        <a href="#productos" className="text-neutral-300 hover:text-white transition-colors">Productos</a>
-        <a href="#contacto" className="text-neutral-300 hover:text-white transition-colors">Contacto</a>
+        <a href="servicios" className="text-neutral-300 hover:text-white transition-colors">Servicios</a>
+        <a href="productos" className="text-neutral-300 hover:text-white transition-colors">Productos</a>
+        <a href="contacto" className="text-neutral-300 hover:text-white transition-colors">Contacto</a>
       </div>
 
       {/* Sección Derecha (Login / Nombre de usuario + Agendar) */}
