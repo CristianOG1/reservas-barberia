@@ -1,7 +1,11 @@
+// src/pages/admin/ServicioForm.jsx
+// Alta / edición / detalle de un servicio. La lógica de escritura (storage +
+// insert/update) es la que ya existía: solo cambió la presentación al tema claro
+// del panel. `soloLectura` abre el mismo formulario en modo detalle.
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 
-export default function ServicioForm({ servicio, onClose, onGuardado }) {
+export default function ServicioForm({ servicio, categorias = [], soloLectura = false, onClose, onGuardado }) {
   const esEdicion = !!servicio
 
   const [form, setForm] = useState({
@@ -58,120 +62,167 @@ export default function ServicioForm({ servicio, onClose, onGuardado }) {
     }
   }
 
+  const soloCampo = 'mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-navy outline-none placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary-100 disabled:cursor-default disabled:bg-slate-100 disabled:text-slate'
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <form
         onSubmit={handleSubmit}
-        className="flex max-h-[90vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-lg border border-ink-700 bg-ink-900 p-5 sm:p-6"
+        className="flex max-h-[90vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
       >
-        <h3 className="font-serif text-lg text-bone-100">
-          {esEdicion ? 'Editar servicio' : 'Nuevo servicio'}
-        </h3>
+        {/* ===== Header del modal ===== */}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-amber">Carta del salón</p>
+          <h3 className="font-serif text-lg text-navy">
+            {soloLectura ? 'Detalle del Servicio' : esEdicion ? 'Editar Servicio' : 'Nuevo Servicio'}
+          </h3>
+          <p className="mt-1 text-xs text-slate">
+            {soloLectura
+              ? 'Consulta la ficha completa del servicio.'
+              : 'Nombre, categoría y descripción son visibles en la carta del salón.'}
+          </p>
+        </div>
 
-        {/* Imagen */}
+        {/* ===== Imagen ===== */}
         <div className="flex items-center gap-4">
           <img
             src={previewUrl || 'https://placehold.co/80x80?text=%20'}
-            className="h-16 w-16 shrink-0 rounded-md object-cover bg-ink-800"
+            alt={form.nombre ? `Imagen de ${form.nombre}` : 'Vista previa del servicio'}
+            className="h-16 w-16 shrink-0 rounded-full object-cover ring-1 ring-slate-200"
           />
-          <label htmlFor="imagen" className="min-w-0 flex-1">
-            <span className="block text-sm text-bone-400">Imagen</span>
-            <input
-              id="imagen"
-              type="file"
-              accept="image/*"
-              onChange={handleImagen}
-              className="mt-1 block w-full cursor-pointer text-xs text-bone-600 file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-ink-800 file:px-3 file:py-1.5 file:text-sm file:text-bone-100 hover:file:bg-ink-700"
-            />
-          </label>
+          {soloLectura ? (
+            <p className="text-xs text-slate">
+              {servicio?.imagen ? 'Imagen cargada' : 'Este servicio no tiene imagen.'}
+            </p>
+          ) : (
+            <label htmlFor="imagen" className="min-w-0 flex-1">
+              <span className="block text-sm text-slate">Imagen del servicio</span>
+              <input
+                id="imagen"
+                type="file"
+                accept="image/*"
+                onChange={handleImagen}
+                className="mt-1 block w-full cursor-pointer text-xs text-slate file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:text-navy hover:file:bg-slate-200"
+              />
+            </label>
+          )}
         </div>
 
+        {/* ===== Nombre ===== */}
         <div>
-          <label htmlFor="nombre" className="block text-sm text-bone-400">Nombre *</label>
+          <label htmlFor="nombre" className="block text-sm text-slate">Nombre *</label>
           <input
             id="nombre"
             name="nombre"
             value={form.nombre}
             onChange={handleChange}
+            disabled={soloLectura}
             required
             placeholder="Nombre del servicio"
-            className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800 px-4 py-2.5 text-sm text-bone-100 transition-colors placeholder:text-bone-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass-400/60"
+            className={soloCampo}
           />
         </div>
 
+        {/* ===== Categoría, con sugerencias del catálogo ===== */}
         <div>
-          <label htmlFor="categoria" className="block text-sm text-bone-400">Categoría *</label>
+          <label htmlFor="categoria" className="block text-sm text-slate">Categoría *</label>
           <input
             id="categoria"
             name="categoria"
             value={form.categoria}
             onChange={handleChange}
+            disabled={soloLectura}
             required
-            placeholder="Categoría (ej. Corte, Barba)"
-            className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800 px-4 py-2.5 text-sm text-bone-100 transition-colors placeholder:text-bone-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass-400/60"
+            placeholder="Escribe o elige una categoría"
+            list="categorias-servicios"
+            className={soloCampo}
           />
+          <datalist id="categorias-servicios">
+            {categorias.map((c) => <option key={c} value={c} />)}
+          </datalist>
         </div>
 
+        {/* ===== Descripción ===== */}
         <div>
-          <label htmlFor="descripcion" className="block text-sm text-bone-400">Descripción</label>
+          <label htmlFor="descripcion" className="block text-sm text-slate">Descripción</label>
           <textarea
             id="descripcion"
             name="descripcion"
             value={form.descripcion}
             onChange={handleChange}
+            disabled={soloLectura}
             rows={3}
-            placeholder="Descripción"
-            className="mt-1 w-full resize-none rounded-md border border-ink-700 bg-ink-800 px-4 py-2.5 text-sm text-bone-100 transition-colors placeholder:text-bone-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass-400/60"
+            placeholder="Qué incluye el servicio"
+            className={`${soloCampo} resize-none`}
           />
         </div>
 
+        {/* ===== Costo y Duración ===== */}
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="costo" className="block text-sm text-bone-400">Costo (MXN) *</label>
+            <label htmlFor="costo" className="block text-sm text-slate">Tarifa (MXN) *</label>
             <input
               id="costo"
               type="number"
               name="costo"
+              min="0"
+              step="1"
               value={form.costo}
               onChange={handleChange}
+              disabled={soloLectura}
               required
-              placeholder="Costo (MXN)"
-              className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800 px-4 py-2.5 text-sm text-bone-100 transition-colors placeholder:text-bone-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass-400/60"
+              placeholder="0"
+              className={`${soloCampo} tabular-nums`}
             />
           </div>
 
           <div>
-            <label htmlFor="duracion" className="block text-sm text-bone-400">Duración *</label>
+            <label htmlFor="duracion" className="block text-sm text-slate">Duración (min) *</label>
             <input
               id="duracion"
+              type="number"
               name="duracion"
+              min="5"
+              step="5"
               value={form.duracion}
               onChange={handleChange}
+              disabled={soloLectura}
               required
-              placeholder="Duración (ej. 50 min)"
-              className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800 px-4 py-2.5 text-sm text-bone-100 transition-colors placeholder:text-bone-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass-400/60"
+              placeholder="30"
+              className={`${soloCampo} tabular-nums`}
             />
           </div>
         </div>
 
-        {errorMsg && <p className="text-sm text-cancelada">{errorMsg}</p>}
+        {errorMsg && <p role="alert" className="text-sm text-red-600">{errorMsg}</p>}
 
-        <div className="mt-2 flex gap-3">
-          <button
-            type="submit"
-            disabled={guardando}
-            className="flex-1 rounded-md bg-brass-400 px-5 py-2.5 text-sm font-semibold text-ink-950 transition-colors hover:bg-brass-300 active:bg-brass-500 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass-400/60"
-          >
-            {guardando ? 'Guardando...' : 'Guardar'}
-          </button>
+        {/* ===== Acciones ===== */}
+        {soloLectura ? (
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-ink-700 px-5 py-2.5 text-sm text-bone-400 transition-colors hover:bg-ink-800 hover:text-bone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass-400/60"
+            className="mt-2 w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1a38a0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
-            Cancelar
+            Cerrar
           </button>
-        </div>
+        ) : (
+          <div className="mt-2 flex gap-2">
+            <button
+              type="submit"
+              disabled={guardando}
+              className="flex-1 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1a38a0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50"
+            >
+              {guardando ? 'Guardando...' : 'Guardar'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-slate-200 px-5 py-2.5 text-sm text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
       </form>
     </div>
   )

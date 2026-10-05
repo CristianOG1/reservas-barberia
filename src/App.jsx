@@ -12,6 +12,8 @@ import CitasAdmin from './pages/admin/CitasAdmin'
 import ProtectedRoute from './components/ProtejerRuta'
 import LoginPage from './pages/LoginPage'
 import ProductosPage from './pages/ProductosPage'
+import ContactoPage from './components/Contacto'
+import ServicesPage from './pages/ServicesPage'
 
 function App() {
   return (
@@ -43,6 +45,8 @@ function App() {
       />
       <Route path="/productos" element={<ProductosPage />} />
       <Route path="/agendar" element={<BookingPage />} />
+      <Route path="/contacto" element={<ContactoPage />} />
+      <Route path="/servicios" element={<ServicesPage />} />
     </Routes>
   )
 }
