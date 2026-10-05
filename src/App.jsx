@@ -11,6 +11,7 @@ import BarberosAdmin from './pages/admin/BarberosAdmin'
 import CitasAdmin from './pages/admin/CitasAdmin'
 import ProtectedRoute from './components/ProtejerRuta'
 import LoginPage from './pages/LoginPage'
+import ProductosPage from './pages/ProductosPage'
 
 function App() {
   return (
@@ -40,6 +41,7 @@ function App() {
           </div>
         }
       />
+      <Route path="/productos" element={<ProductosPage />} />
       <Route path="/agendar" element={<BookingPage />} />
     </Routes>
   )

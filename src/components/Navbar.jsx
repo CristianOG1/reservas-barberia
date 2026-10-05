@@ -19,7 +19,12 @@ export default function Navbar() {
       <div className="hidden md:flex items-center gap-8 text-sm">
         <a href="#" className="text-white bg-neutral-800 px-4 py-2 rounded-full">Inicio</a>
         <a href="#" className="text-neutral-300 hover:text-white">Servicios</a>
-        <a href="#" className="text-neutral-300 hover:text-white">Productos</a>
+        <button
+  onClick={() => navigate('/productos')}
+  className="text-neutral-300 hover:text-white cursor-pointer"
+>
+  Productos
+</button>
         <a href="#" className="text-neutral-300 hover:text-white">Contacto</a>
       </div>
 
