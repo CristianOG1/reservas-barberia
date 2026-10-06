@@ -20,7 +20,7 @@ export default function Navbar() {
       navigate('/admin')
     } else {
       // Redirige al Dashboard del cliente
-      navigate('/booking')
+      navigate('/cliente')
     }
   }
 
@@ -39,15 +39,6 @@ export default function Navbar() {
 
       {/* Links de navegación */}
       <div className="hidden md:flex items-center gap-8 text-sm">
-        <a href="#" className="text-white bg-neutral-800 px-4 py-2 rounded-full">Inicio</a>
-        <a href="#" className="text-neutral-300 hover:text-white">Servicios</a>
-        <button
-  onClick={() => navigate('/productos')}
-  className="text-neutral-300 hover:text-white cursor-pointer"
->
-  Productos
-</button>
-        <a href="#" className="text-neutral-300 hover:text-white">Contacto</a>
         <Link to="/" className="text-white bg-neutral-800 px-4 py-2 rounded-full">Inicio</Link>
         <a href="servicios" className="text-neutral-300 hover:text-white transition-colors">Servicios</a>
         <a href="productos" className="text-neutral-300 hover:text-white transition-colors">Productos</a>
@@ -83,7 +74,7 @@ export default function Navbar() {
         )}
 
         <button 
-          onClick={() => navigate('/booking')} 
+          onClick={() => navigate('/agendar')} 
           className="bg-white hover:bg-neutral-200 text-neutral-900 text-sm font-semibold px-4 py-2 rounded-md transition-colors"
         >
           AGENDAR CITA

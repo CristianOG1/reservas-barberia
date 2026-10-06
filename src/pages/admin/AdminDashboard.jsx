@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useConfiguracion } from '../../context/useConfiguracion'
 
 const links = [
   { to: '/admin', label: 'Resumen', fin: true },
@@ -7,6 +8,7 @@ const links = [
   { to: '/admin/servicios', label: 'Gestión de Servicios' },
   { to: '/admin/productos', label: 'Gestión de Productos' },
   { to: '/admin/barberos', label: 'Gestión de Barberos' },
+  { to: '/admin/configuracion', label: 'Configuración' },
 ]
 
 const iconoNav = {
@@ -15,10 +17,16 @@ const iconoNav = {
   'Gestión de Servicios': <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>,
   'Gestión de Productos': <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>,
   'Gestión de Barberos': <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+  'Configuración': <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>,
 }
 
 export default function AdminDashboard() {
   const { session, logout } = useAuth()
+  // Nombre y logo vienen de la tabla `configuracion` (fila id = 1)
+  const { configuracion, cargando: cargandoConfig } = useConfiguracion()
+
+  const nombreBarberia = configuracion.nombre || ''
+  const inicial = (nombreBarberia.charAt(0) || 'N').toUpperCase()
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -27,12 +35,33 @@ export default function AdminDashboard() {
         {/* Logo + identidad */}
         <div className="border-b border-slate-200 px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-white font-serif text-sm">
-              NB
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-navy leading-tight">Nombre Admin</p>
-              <p className="text-xs text-slate">Nombre Barbería</p>
+            {configuracion.logo ? (
+              <img
+                src={configuracion.logo}
+                alt={nombreBarberia || 'Logo de la barbería'}
+                className="h-9 w-9 shrink-0 rounded-lg object-cover"
+              />
+            ) : (
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary font-serif text-sm text-white">
+                {inicial}
+              </div>
+            )}
+            <div className="min-w-0">
+              {/* Esqueleto breve mientras llega la fila: evita el parpadeo del
+                  nombre anterior. */}
+              {cargandoConfig ? (
+                <div className="space-y-1.5">
+                  <div className="h-3 w-28 animate-pulse rounded bg-slate-200" />
+                  <div className="h-2.5 w-20 animate-pulse rounded bg-slate-100" />
+                </div>
+              ) : (
+                <>
+                  <p className="truncate text-sm font-semibold leading-tight text-navy">
+                    {nombreBarberia}
+                  </p>
+                  <p className="text-xs text-slate">Nombre Barbería</p>
+                </>
+              )}
             </div>
           </div>
           <span className="mt-3 inline-block rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-semibold text-primary">
