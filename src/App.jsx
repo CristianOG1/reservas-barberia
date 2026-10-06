@@ -11,6 +11,8 @@ import BarberosAdmin from './pages/admin/BarberosAdmin'
 import CitasAdmin from './pages/admin/CitasAdmin'
 import ProtectedRoute from './components/ProtejerRuta'
 import LoginPage from './pages/LoginPage'
+import ConfiguracionAdmin from './pages/admin/ConfiguracionAdmin'
+import { ConfiguracionProvider } from './context/ConfiguracionProvider'
 import ProductosPage from './pages/ProductosPage'
 import ContactoPage from './components/Contacto'
 import ServicesPage from './pages/ServicesPage'
@@ -23,7 +25,11 @@ function App() {
         path="/admin"
         element={
           <ProtectedRoute>
-            <AdminDashboard />
+            {/* El provider envuelve todo el layout del admin: el sidebar y la
+                página de configuración leen la misma fila. */}
+            <ConfiguracionProvider>
+              <AdminDashboard />
+            </ConfiguracionProvider>
           </ProtectedRoute>
         }
       >
@@ -32,6 +38,7 @@ function App() {
         <Route path="productos" element={<ProductosAdmin />} />
         <Route path="barberos" element={<BarberosAdmin />} />
         <Route path="citas" element={<CitasAdmin />} />
+        <Route path="configuracion" element={<ConfiguracionAdmin />} />
       </Route>
       <Route
         path="/"

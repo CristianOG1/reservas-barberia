@@ -83,6 +83,7 @@ export default function BarberosAdmin() {
   const [barberoEditando, setBarberoEditando] = useState(null)
   const [busqueda, setBusqueda] = useState('')
   const [filtro, setFiltro] = useState('todos') // todos | disponibles | noDisponibles
+  const [errorMsg, setErrorMsg] = useState(null)
 
   useEffect(() => {
     cargarDatos()
@@ -109,11 +110,29 @@ export default function BarberosAdmin() {
     cargarDatos()
   }
 
-  // Alta/baja rápida: actualiza en Supabase y en el estado local, sin recargar todo
+  // Alta/baja rápida: actualiza en Supabase y en el estado local, sin recargar todo.
+  // Optimista, pero verificada: `.select()` devuelve la fila actualizada, así que
+  // sabemos si el UPDATE se aplicó de verdad o si RLS/red lo rechazaron.
   const toggleDisponible = async (barbero) => {
     const nuevoValor = !barbero.disponible
+
+    // Cambio optimista: el switch se mueve al instante.
     setBarberos(barberos.map((b) => (b.id === barbero.id ? { ...b, disponible: nuevoValor } : b)))
-    await supabase.from('barberos').update({ disponible: nuevoValor }).eq('id', barbero.id)
+    setErrorMsg(null)
+
+    const { data, error } = await supabase
+      .from('barberos')
+      .update({ disponible: nuevoValor })
+      .eq('id', barbero.id)
+      .select('id, disponible')
+
+    const guardado = !error && data?.length === 1 && data[0].disponible === nuevoValor
+    if (!guardado) {
+      if (error) console.error(error)
+      // Revierte el cambio optimista y avisa.
+      setBarberos(barberos.map((b) => (b.id === barbero.id ? { ...b, disponible: barbero.disponible } : b)))
+      setErrorMsg('No se pudo guardar el cambio, intenta de nuevo.')
+    }
   }
 
   const abrirNuevo = () => { setBarberoEditando(null); setMostrarForm(true) }
@@ -147,6 +166,16 @@ export default function BarberosAdmin() {
 
   return (
     <div>
+      {/* Error de escritura (p. ej. el switch que no se pudo guardar) */}
+      {errorMsg && (
+        <p
+          role="alert"
+          className="mb-4 rounded-lg border border-red-600/30 bg-red-50 px-4 py-2.5 text-sm text-red-600"
+        >
+          {errorMsg}
+        </p>
+      )}
+
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>

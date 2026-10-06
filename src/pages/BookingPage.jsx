@@ -47,6 +47,12 @@ function formatoDuracion(valor) {
   return /^\d+$/.test(s) ? `${s} min` : s || '—'
 }
 
+// Igual que `ServiciosAdmin.aMinutos()`: extrae el primer número del texto.
+function duracionAMinutos(valor) {
+  const n = parseInt(String(valor ?? '').match(/\d+/)?.[0] ?? '', 10)
+  return Number.isFinite(n) ? n : 0
+}
+
 export default function BookingPage() {
   const [fechaElegida, setFechaElegida] = useState(null) // 'YYYY-MM-DD'
   const [horaElegida, setHoraElegida] = useState(null) // 'HH:MM' (24 h)
@@ -55,12 +61,27 @@ export default function BookingPage() {
 
   const [servicios, setServicios] = useState([])
   const [cargandoServicios, setCargandoServicios] = useState(true)
-  const [servicioElegido, setServicioElegido] = useState(null)
+  // Selección múltiple: el id va de vuelta en el objeto para deseleccionar fácil.
+  const [serviciosElegidos, setServiciosElegidos] = useState([])
+
+  // Productos (opcional, selección múltiple)
+  const [productos, setProductos] = useState([])
+  const [productosElegidos, setProductosElegidos] = useState([])
+
+  // null = "Cualquier barbero" (opción por defecto, siempre disponible)
+  const [barberos, setBarberos] = useState([])
+  const [cargandoBarberos, setCargandoBarberos] = useState(true)
+  const [barberoElegido, setBarberoElegido] = useState(null)
+  const barberoIdElegido = barberoElegido?.id || null
 
   const [form, setForm] = useState({ nombre: '', telefono: '', correo: '', notas: '' })
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value })
 
   const [estadoEnvio, setEstadoEnvio] = useState('idle') // idle | enviando | error | slot | exito
+
+  // Panel de confirmación final: el botón del sidebar solo lo abre; el insert
+  // ocurre al pulsar "Confirmar reservación" dentro del modal.
+  const [mostrarResumen, setMostrarResumen] = useState(false)
 
   const [horasOcupadas, setHorasOcupadas] = useState([])
 
@@ -90,13 +111,59 @@ export default function BookingPage() {
     return () => { vigente = false }
   }, [])
 
+  /* ---- Productos desde la base de datos ----
+     La lectura pública de `productos` para `anon` ya existe (política "Lectura
+     publica"). Si la consulta falla, la lista queda vacía y la sección entera no
+     se muestra: los productos son opcionales y no deben romper el flujo. */
+  useEffect(() => {
+    let vigente = true
+    supabase
+      .from('productos')
+      .select('id, nombre, categoria, descripcion, precio, imagen')
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (!vigente) return
+        if (error) console.error(error)
+        setProductos(data || [])
+      })
+    return () => { vigente = false }
+  }, [])
+
+  /* ---- Barberos disponibles desde la base de datos ----
+     La lectura pública de `barberos` para `anon` ya existe (política "Lectura
+     publica"). Solo se piden los que están `disponible = true`. */
+  useEffect(() => {
+    let vigente = true
+    supabase
+      .from('barberos')
+      .select('id, nombre, especialidad, imagen')
+      .eq('disponible', true)
+      .order('created_at', { ascending: true })
+      .then(({ data, error }) => {
+        if (!vigente) return
+        // Si la consulta falla no se le muestra nada al usuario: la lista queda
+        // vacía y solo aparece "Cualquier barbero", que siempre es válida.
+        if (error) console.error(error)
+        setBarberos(data || [])
+        setCargandoBarberos(false)
+      })
+    return () => { vigente = false }
+  }, [])
+
   /* ---- Horas ya ocupadas ----
      Se consulta por RPC: `citas` no es legible por `anon` (expondría nombre,
      teléfono y correo). `horas_ocupadas` es SECURITY DEFINER y devuelve
-     únicamente la columna `hora` de las citas no canceladas de esa fecha. */
-  const cargarHorasOcupadas = async (fecha) => {
+     únicamente columnas `hora`.
+
+     Con barbero concreto devuelve las horas ocupadas de ese barbero; con
+     "Cualquier barbero" devuelve las horas en las que ya no queda ninguno
+     disponible. */
+  const cargarHorasOcupadas = async (fecha, barberoId) => {
     if (!fecha) return
-    const { data, error } = await supabase.rpc('horas_ocupadas', { fecha_consulta: fecha })
+    const { data, error } = await supabase.rpc('horas_ocupadas', {
+      fecha_consulta: fecha,
+      barbero_id: barberoId,
+    })
     if (error) {
       console.error(error)
       setHorasOcupadas([])
@@ -110,17 +177,19 @@ export default function BookingPage() {
     // (handler), no aquí, para no llamar a setState de forma síncrona en el efecto.
     if (!fechaElegida) return
     let vigente = true
-    supabase.rpc('horas_ocupadas', { fecha_consulta: fechaElegida }).then(({ data, error }) => {
-      if (!vigente) return
-      if (error) {
-        console.error(error)
-        setHorasOcupadas([])
-        return
-      }
-      setHorasOcupadas((data || []).map((h) => String(h).slice(0, 5)))
-    })
+    supabase
+      .rpc('horas_ocupadas', { fecha_consulta: fechaElegida, barbero_id: barberoIdElegido })
+      .then(({ data, error }) => {
+        if (!vigente) return
+        if (error) {
+          console.error(error)
+          setHorasOcupadas([])
+          return
+        }
+        setHorasOcupadas((data || []).map((h) => String(h).slice(0, 5)))
+      })
     return () => { vigente = false }
-  }, [fechaElegida])
+  }, [fechaElegida, barberoIdElegido])
 
   /* ---- Calendario: 7 días de la semana, generado desde la fecha real ---- */
   const dias = useMemo(() => {
@@ -159,6 +228,34 @@ export default function BookingPage() {
     setHorasOcupadas([]) // limpia las del día anterior hasta que responda la RPC
   }
 
+  // Cambiar de barbero cambia la disponibilidad del día, así que la hora
+  // seleccionada deja de ser válida.
+  const elegirBarbero = (barbero) => {
+    setBarberoElegido(barbero)
+    setHoraElegida(null)
+    setHorasOcupadas([])
+  }
+
+  /* ---- Selección múltiple ---- */
+  const alternarServicio = (s) => {
+    setServiciosElegidos((prev) =>
+      prev.some((x) => x.nombre === s.nombre)
+        ? prev.filter((x) => x.nombre !== s.nombre)
+        : [...prev, s]
+    )
+  }
+
+  const alternarProducto = (p) => {
+    setProductosElegidos((prev) =>
+      prev.some((x) => x.id === p.id)
+        ? prev.filter((x) => x.id !== p.id)
+        : [...prev, p]
+    )
+  }
+
+  const quitarServicio = (nombre) => setServiciosElegidos((prev) => prev.filter((x) => x.nombre !== nombre))
+  const quitarProducto = (id) => setProductosElegidos((prev) => prev.filter((x) => x.id !== id))
+
   // Una hora no está disponible si ya está reservada o si hoy ya pasó.
   const horaDisponible = (hora) => {
     if (horasOcupadas.includes(hora)) return false
@@ -166,11 +263,31 @@ export default function BookingPage() {
     return true
   }
 
-  const total = Number(servicioElegido?.costo) || 0
+  /* ---- Totales: servicios + productos ---- */
+  const totalServicios = serviciosElegidos.reduce((a, s) => a + (Number(s.costo) || 0), 0)
+  const totalProductos = productosElegidos.reduce((a, p) => a + (Number(p.precio) || 0), 0)
+  const total = totalServicios + totalProductos
+
+  // Duración estimada: solo la de los servicios. Los productos no ocupan silla.
+  const duracionTotalMin = serviciosElegidos.reduce((a, s) => a + duracionAMinutos(s.duracion), 0)
 
   /* ---- Guardado ---- */
   const handleConfirmar = async () => {
     setEstadoEnvio('enviando')
+
+    // Si el cliente eligió "Cualquier barbero", se le asigna el primer barbero
+    // disponible y libre en ese horario. La RPC devuelve solo el id; si no hay
+    // ninguno (salón sin barberos activos) devuelve NULL y la cita se guarda
+    // sin barbero, como antes.
+    let barberoId = barberoIdElegido
+    if (!barberoId) {
+      const { data, error } = await supabase.rpc('asignar_barbero', {
+        fecha_consulta: fechaElegida,
+        hora_consulta: horaElegida,
+      })
+      if (error) console.error(error)
+      barberoId = data || null
+    }
 
     // No se envía `addon` (la columna existe pero la página ya no ofrece el
     // add-on) ni `estado`: la columna tiene default 'pendiente' en la BD.
@@ -179,10 +296,14 @@ export default function BookingPage() {
       telefono: form.telefono,
       correo: form.correo,
       notas: form.notas,
-      servicio: servicioElegido.nombre,
+      // Varios servicios van como texto separado por ', ' porque la columna es
+      // TEXT y `CitasAdmin` sigue leyéndola como una sola cadena.
+      servicio: serviciosElegidos.map((s) => s.nombre).join(', '),
+      productos: productosElegidos.map((p) => ({ nombre: p.nombre, precio: Number(p.precio) || 0 })),
       fecha: fechaElegida,          // 'YYYY-MM-DD' en hora local
       hora: horaElegida,            // 'HH:MM' 24 h
       total,
+      barbero_id: barberoId,
     }])
 
     if (error) {
@@ -191,14 +312,26 @@ export default function BookingPage() {
       // cliente tomó el slot entre la consulta y este insert.
       if (error.code === '23505') {
         setHoraElegida(null)
-        await cargarHorasOcupadas(fechaElegida)
+        await cargarHorasOcupadas(fechaElegida, barberoIdElegido)
         setEstadoEnvio('slot')
+        // El horario se liberó: hay que rehacer la fecha/hora, así que el modal
+        // se cierra para no dejar una pantalla de confirmación obsoleta.
+        setMostrarResumen(false)
+        setPasoActual(2)
       } else {
         setEstadoEnvio('error')
       }
     } else {
       setEstadoEnvio('exito')
     }
+  }
+
+  // Al fallar el insert dentro del modal se mantiene abierto para reintentar;
+  // el mensaje de slot vive en el sidebar, así que ahí se muestra.
+  const volverAAgregar = () => {
+    setMostrarResumen(false)
+    setEstadoEnvio('idle')
+    setPasoActual(1) // conserva servicios, productos y datos del cliente
   }
 
   const diaElegido = dias.find((d) => d.fecha === fechaElegida)
@@ -281,11 +414,11 @@ export default function BookingPage() {
               ) : (
                 <div className="grid sm:grid-cols-2 gap-4 mb-4">
                   {servicios.map((s) => {
-                    const seleccionado = servicioElegido?.nombre === s.nombre
+                    const seleccionado = serviciosElegidos.some((x) => x.nombre === s.nombre)
                     return (
                       <button
                         key={s.id ?? s.nombre}
-                        onClick={() => setServicioElegido(s)}
+                        onClick={() => alternarServicio(s)}
                         className={`text-left bg-neutral-900 border rounded-xl p-5 relative ${
                           seleccionado ? 'border-sky-500' : 'border-neutral-800'
                         }`}
@@ -319,9 +452,156 @@ export default function BookingPage() {
                 </div>
               )}
 
-              {/* Botón siguiente */}
+              {/* ===== Selección de barbero (opcional) ===== */}
+              <div className="mt-10">
+                <p className="text-sky-400 text-xs tracking-wide mb-2">02. BARBERO</p>
+                <h2 className="text-white text-xl font-semibold mb-4">Elige a tu barbero</h2>
+
+                {cargandoBarberos ? (
+                  <p className="text-neutral-400 text-sm">Cargando...</p>
+                ) : (
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    {/* "Cualquier barbero" siempre disponible y por defecto */}
+                    <button
+                      onClick={() => elegirBarbero(null)}
+                      className={`text-left bg-neutral-900 border rounded-xl p-5 ${
+                        barberoElegido === null ? 'border-sky-500' : 'border-neutral-800'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-3">
+                        <span className="text-neutral-500 text-[10px] tracking-wide">Sin preferencia</span>
+                        <span
+                          className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${
+                            barberoElegido === null ? 'bg-sky-500 text-white' : 'bg-neutral-800 text-transparent'
+                          }`}
+                        >
+                          ✓
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 shrink-0 rounded-full bg-neutral-800 flex items-center justify-center text-neutral-400">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                          </svg>
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-white font-semibold">Cualquier barbero</h3>
+                          <p className="text-neutral-400 text-sm">Mayor disponibilidad inmediata</p>
+                        </div>
+                      </div>
+                    </button>
+
+                    {barberos.map((b) => {
+                      const seleccionado = barberoElegido?.id === b.id
+                      return (
+                        <button
+                          key={b.id}
+                          onClick={() => elegirBarbero(b)}
+                          className={`text-left bg-neutral-900 border rounded-xl p-5 ${
+                            seleccionado ? 'border-sky-500' : 'border-neutral-800'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start mb-3">
+                            <span className="text-neutral-500 text-[10px] tracking-wide">Disponible</span>
+                            <span
+                              className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${
+                                seleccionado ? 'bg-sky-500 text-white' : 'bg-neutral-800 text-transparent'
+                              }`}
+                            >
+                              ✓
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {b.imagen ? (
+                              <img
+                                src={b.imagen}
+                                alt={b.nombre}
+                                className="h-10 w-10 shrink-0 rounded-full object-cover bg-neutral-800"
+                              />
+                            ) : (
+                              <div className="h-10 w-10 shrink-0 rounded-full bg-neutral-800 flex items-center justify-center text-sm font-semibold text-neutral-400">
+                                {b.nombre?.charAt(0) || '?'}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <h3 className="text-white font-semibold truncate">{b.nombre}</h3>
+                              <p className="text-neutral-400 text-sm truncate">
+                                {b.especialidad || 'Barbero'}
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* ===== Productos (opcional) ===== */}
+              {productos.length > 0 && (
+                <div className="mt-10">
+                  <p className="text-sky-400 text-xs tracking-wide mb-2">PRODUCTOS</p>
+                  <h2 className="text-white text-xl font-semibold mb-4">
+                    ¿Quieres agregar algún producto?
+                  </h2>
+
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    {productos.map((p) => {
+                      const elegido = productosElegidos.some((x) => x.id === p.id)
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => alternarProducto(p)}
+                          className={`text-left bg-neutral-900 border rounded-xl p-5 ${
+                            elegido ? 'border-sky-500' : 'border-neutral-800'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start mb-3">
+                            <span className="text-neutral-500 text-[10px] tracking-wide">
+                              {p.categoria}
+                            </span>
+                            <span
+                              className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${
+                                elegido ? 'bg-sky-500 text-white' : 'bg-neutral-800 text-transparent'
+                              }`}
+                            >
+                              ✓
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {p.imagen ? (
+                              <img
+                                src={p.imagen}
+                                alt={p.nombre}
+                                className="h-10 w-10 shrink-0 rounded-lg object-cover bg-neutral-800"
+                              />
+                            ) : (
+                              <div className="h-10 w-10 shrink-0 rounded-lg bg-neutral-800 flex items-center justify-center text-sm font-semibold text-neutral-400">
+                                {p.nombre?.charAt(0) || '?'}
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <h3 className="text-white font-semibold truncate">{p.nombre}</h3>
+                              <p className="text-white text-sm font-semibold tabular-nums">
+                                ${Number(p.precio)}{' '}
+                                <span className="text-neutral-500 text-xs">MXN</span>
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Botón siguiente: depende SOLO del servicio; barbero y productos
+                  son opcionales */}
               <button
-                disabled={!servicioElegido}
+                disabled={serviciosElegidos.length === 0}
                 onClick={() => setPasoActual(2)}
                 className="mt-8 bg-white text-neutral-900 font-semibold px-6 py-3 rounded-md disabled:opacity-30"
               >Siguiente →</button>
@@ -476,12 +756,66 @@ export default function BookingPage() {
                 </div>
 
                 <div className="flex flex-col gap-3 text-sm border-t border-neutral-800 pt-4">
+                  {/* Servicios elegidos, cada uno quitable */}
+                  {serviciosElegidos.map((s) => (
+                    <div key={s.nombre} className="flex items-center justify-between gap-2">
+                      <span className="text-neutral-400 truncate">
+                        {s.nombre}
+                        <span className="text-neutral-600 text-xs ml-1.5">
+                          {formatoDuracion(s.duracion)}
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="text-white tabular-nums">
+                          ${Number(s.costo)} MXN
+                        </span>
+                        <button
+                          onClick={() => quitarServicio(s.nombre)}
+                          aria-label={`Quitar ${s.nombre}`}
+                          className="text-neutral-500 hover:text-white text-sm leading-none px-1"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+
+                  {/* Productos elegidos */}
+                  {productosElegidos.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between gap-2">
+                      <span className="text-neutral-400 truncate">{p.nombre}</span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="text-white tabular-nums">
+                          ${Number(p.precio)} MXN
+                        </span>
+                        <button
+                          onClick={() => quitarProducto(p.id)}
+                          aria-label={`Quitar ${p.nombre}`}
+                          className="text-neutral-500 hover:text-white text-sm leading-none px-1"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+
+                  {serviciosElegidos.length === 0 && productosElegidos.length === 0 && (
+                    <span className="text-neutral-500 text-sm">Aún no has elegido nada.</span>
+                  )}
+
+                  {duracionTotalMin > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-neutral-400">Duración estimada</span>
+                      <span className="text-white tabular-nums">
+                        {formatoDuracion(String(duracionTotalMin))}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="flex justify-between">
-                    <span className="text-neutral-400">
-                      {servicioElegido?.nombre || '—'}
-                    </span>
+                    <span className="text-neutral-400">Barbero</span>
                     <span className="text-white">
-                      {servicioElegido ? `$${Number(servicioElegido.costo)} MXN` : '—'}
+                      {barberoElegido?.nombre || 'Cualquier barbero'}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -503,11 +837,11 @@ export default function BookingPage() {
                 </p>
 
                 <button
-                    onClick={handleConfirmar}
-                    disabled={!servicioElegido || !fechaElegida || !horaElegida || !form.nombre || !form.telefono || !form.correo || estadoEnvio === 'enviando'}
+                    onClick={() => { setEstadoEnvio('idle'); setMostrarResumen(true) }}
+                    disabled={serviciosElegidos.length === 0 || !fechaElegida || !horaElegida || !form.nombre || !form.telefono || !form.correo || estadoEnvio === 'enviando'}
                     className="w-full bg-white text-neutral-900 font-semibold py-3 rounded-md mt-5 disabled:opacity-30"
                   >
-                    {estadoEnvio === 'enviando' ? 'Guardando...' : 'CONFIRMAR RESERVACIÓN →'}
+                    CONFIRMAR RESERVACIÓN →
                   </button>
                   {estadoEnvio === 'slot' && (
                     <p className="text-amber-400 text-xs mt-2">Ese horario acaba de ser tomado, elige otro.</p>
@@ -520,6 +854,139 @@ export default function BookingPage() {
           </div>
         </div>
       </div>
+
+      {/* ===== Panel de confirmación final =====
+          Aquí ocurre el insert. El botón del sidebar solo abre este modal. */}
+      {mostrarResumen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="flex max-h-[90vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-xl bg-neutral-900 border border-neutral-800 p-5 sm:p-6">
+            <div>
+              <p className="text-sky-400 text-xs tracking-wide mb-1">Último paso</p>
+              <h2 className="text-white text-xl font-semibold">Confirma tu reservación</h2>
+              <p className="text-neutral-400 text-sm mt-1">
+                Revisa los detalles antes de enviarlos.
+              </p>
+            </div>
+
+            {/* Servicios */}
+            <div>
+              <p className="text-neutral-500 text-xs tracking-wide mb-2">Servicios</p>
+              {serviciosElegidos.length === 0 ? (
+                <p className="text-neutral-500 text-sm">Sin servicios.</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {serviciosElegidos.map((s) => (
+                    <div key={s.nombre} className="flex justify-between gap-3 text-sm">
+                      <span className="text-white">
+                        {s.nombre}
+                        <span className="text-neutral-500 text-xs ml-1.5">
+                          {formatoDuracion(s.duracion)}
+                        </span>
+                      </span>
+                      <span className="text-white tabular-nums shrink-0">
+                        ${Number(s.costo)} MXN
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {duracionTotalMin > 0 && (
+                <p className="text-neutral-500 text-xs mt-2">
+                  Duración estimada: {formatoDuracion(String(duracionTotalMin))}
+                </p>
+              )}
+            </div>
+
+            {/* Productos */}
+            <div>
+              <p className="text-neutral-500 text-xs tracking-wide mb-2">Productos</p>
+              {productosElegidos.length === 0 ? (
+                <p className="text-neutral-500 text-sm">Sin productos.</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {productosElegidos.map((p) => (
+                    <div key={p.id} className="flex justify-between gap-3 text-sm">
+                      <span className="text-white">{p.nombre}</span>
+                      <span className="text-white tabular-nums shrink-0">
+                        ${Number(p.precio)} MXN
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Turno y datos */}
+            <div className="border-t border-neutral-800 pt-4 flex flex-col gap-2 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-neutral-400">Barbero</span>
+                <span className="text-white">{barberoElegido?.nombre || 'Cualquier barbero'}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-neutral-400">Fecha</span>
+                <span className="text-sky-400">
+                  {diaElegido ? `${diaElegido.label} ${diaElegido.numero}` : '—'}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-neutral-400">Hora</span>
+                <span className="text-sky-400">{horaElegida ? formato12h(horaElegida) : '—'}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-neutral-400">Nombre</span>
+                <span className="text-white truncate">{form.nombre || '—'}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-neutral-400">Teléfono</span>
+                <span className="text-white tabular-nums">{form.telefono || '—'}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-neutral-400">Correo</span>
+                <span className="text-white truncate">{form.correo || '—'}</span>
+              </div>
+              {form.notas && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-neutral-400">Notas</span>
+                  <span className="text-white truncate">{form.notas}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-neutral-800 pt-4 flex justify-between items-center">
+              <span className="text-neutral-400 text-sm">TOTAL</span>
+              <span className="text-white text-xl font-bold">
+                ${total} <span className="text-sm font-normal">MXN</span>
+              </span>
+            </div>
+
+            {estadoEnvio === 'error' && (
+              <p role="alert" className="text-red-400 text-sm">
+                No se pudo guardar la reservación, intenta de nuevo.
+              </p>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleConfirmar}
+                disabled={estadoEnvio === 'enviando'}
+                className="w-full bg-white text-neutral-900 font-semibold py-3 rounded-md disabled:opacity-30"
+              >
+                {estadoEnvio === 'enviando' ? 'Guardando...' : 'Confirmar reservación'}
+              </button>
+              <button
+                onClick={volverAAgregar}
+                disabled={estadoEnvio === 'enviando'}
+                className="w-full bg-neutral-800 text-white py-3 rounded-md disabled:opacity-30"
+              >
+                Agregar otro servicio o producto
+              </button>
+            </div>
+            <p className="text-neutral-500 text-xs">
+              No se cobra nada en línea. Pago directo en sucursal.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

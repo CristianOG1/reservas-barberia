@@ -82,6 +82,15 @@ function normalizar(texto) {
     .trim()
 }
 
+// Una cita puede traer varios servicios: `citas.servicio` los guarda unidos con
+// ', ' (el flujo público permite selección múltiple desde 2026-10).
+function partirServicios(texto) {
+  return String(texto ?? '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+}
+
 // `citas.servicio` es texto libre y casi nunca coincide con `servicios.nombre`
 // (el catálogo dice 'Corte de Cabello', las citas dicen 'Corte'). Se resuelve
 // por nombre exacto, luego por categoría exacta y luego por categoría contenida.
@@ -94,6 +103,31 @@ function buscarServicio(nombreCita, servicios) {
     servicios.find((s) => normalizar(s.categoria) && n.includes(normalizar(s.categoria))) ||
     null
   )
+}
+
+// Duración acumulada de TODOS los servicios de la cita. Los que no están en el
+// catálogo caen al valor por defecto, como ya pasaba con el servicio único.
+function duracionTotalCita(cita, servicios) {
+  const nombres = partirServicios(cita.servicio)
+  if (nombres.length === 0) return DURACION_POR_DEFECTO
+  return nombres.reduce(
+    (a, n) => a + (Number(buscarServicio(n, servicios)?.duracion) || DURACION_POR_DEFECTO),
+    0
+  )
+}
+
+// Productos de la cita: la columna es jsonb con [{ nombre, precio }]. Puede
+// llegar como texto si alguien la insertó a mano.
+function productosCita(cita) {
+  const bruto = cita.productos
+  if (!bruto) return []
+  if (Array.isArray(bruto)) return bruto
+  try {
+    const parsed = typeof bruto === 'string' ? JSON.parse(bruto) : bruto
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
 }
 
 /* ============================================================
@@ -321,8 +355,7 @@ export default function CitasAdmin() {
     if (e !== 'confirmada') return false
     const inicio = minutosDeHora(cita.hora)
     if (inicio == null) return false
-    const duracion = Number(buscarServicio(cita.servicio, servicios)?.duracion) || DURACION_POR_DEFECTO
-    return ahoraMin >= inicio && ahoraMin < inicio + duracion
+    return ahoraMin >= inicio && ahoraMin < inicio + duracionTotalCita(cita, servicios)
   }
 
   const enCursoHoy = citasHoy.filter((c) => estaEnCurso(c) || estadoDe(c) === 'completada').length
@@ -763,8 +796,9 @@ export default function CitasAdmin() {
                   {paginadas.map((c) => {
                     const estado = estadoDe(c)
                     const cancelada = estado === 'cancelada'
-                    const servicio = buscarServicio(c.servicio, servicios)
+                    const nombresServicio = partirServicios(c.servicio)
                     const barbero = barberoPorId(c.barbero_id)
+                    const productosDeLaCita = productosCita(c)
                     const enCurso = estaEnCurso(c)
                     // Primera visita: ninguna otra cita del mismo teléfono agendada
                     // antes que esta (mismo día, pero más temprano, cuenta como previa).
@@ -783,7 +817,9 @@ export default function CitasAdmin() {
                             {formatearHora(c.hora)}
                           </p>
                           <p className="mt-0.5 text-xs text-slate">
-                            {servicio ? `${servicio.duracion} min` : 'Duración no registrada'}
+                            {nombresServicio.length > 0
+                              ? `${duracionTotalCita(c, servicios)} min`
+                              : 'Duración no registrada'}
                           </p>
                           {enCurso && (
                             <span className="mt-1 inline-block rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
@@ -812,7 +848,29 @@ export default function CitasAdmin() {
 
                         {/* Servicio + total */}
                         <td className="px-5 py-3.5">
-                          <p className={`text-sm ${cancelada ? 'text-slate' : 'text-navy'}`}>{c.servicio}</p>
+                          {nombresServicio.length > 1 ? (
+                            <ul className="space-y-0.5">
+                              {nombresServicio.map((n) => (
+                                <li key={n} className={`text-sm ${cancelada ? 'text-slate' : 'text-navy'}`}>
+                                  {n}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className={`text-sm ${cancelada ? 'text-slate' : 'text-navy'}`}>
+                              {c.servicio}
+                            </p>
+                          )}
+                          {productosDeLaCita.length > 0 && (
+                            <ul className="mt-1 space-y-0.5">
+                              {productosDeLaCita.map((p, i) => (
+                                <li key={i} className="text-xs text-slate">
+                                  + {p.nombre}
+                                  <span className="tabular-nums"> · ${Number(p.precio) || 0} MXN</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
                           <p className="mt-0.5 text-xs tabular-nums text-slate">
                             {total ? `$${total.toLocaleString('es-MX')} MXN` : 'Precio sin capturar'}
                             {c.addon ? ' · con vapor ozono' : ''}
