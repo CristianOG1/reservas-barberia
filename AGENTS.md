@@ -78,29 +78,64 @@ index.html  (#root)
 ni `loaders`, ni `actions`, ni data fetching en el router: son `<Route>` + `<Routes>`
 de `react-router-dom` v7 y componentes que hacen `useEffect`.
 
+**Hay dos layouts, ambos como `<Route>` sin `path` + `<Outlet/>`** (2026-10):
+
+- `LayoutPublico` (local en `src/App.jsx`): `bg-neutral-950 min-h-screen` +
+  `<ScrollAlInicio />` + `<Navbar />` + `<Outlet />`. Aloja **`/` (índice),
+  `/servicios`, `/productos` y `/contacto`**. El Navbar vive **una sola vez** aquí,
+  así que el menú hamburguesa se hereda en todas las páginas sin duplicar estado ni
+  lógica.
+- `AdminDashboard` (`src/pages/admin/AdminDashboard.jsx`): layout de `/admin`, dentro
+  de `<ProtectedRoute>` + `<ConfiguracionProvider>`, con su propio rail.
+
+⚠ `/login` y `/agendar` quedan **fuera** de `LayoutPublico` a propósito: login no
+debe llevar navbar y `/agendar` es pantalla completa sin navbar (§5). No los muevas
+dentro.
+
+`ScrollAlInicio` (local en `src/App.jsx`) hace `window.scrollTo(0, 0)` en un
+`useEffect` con dependencia `[pathname]`. Existe porque el router es `<Routes>` plano:
+el `<ScrollRestoration/>` de react-router v7 solo funciona con data routers, que aquí
+no hay. **No lo sustituyas por `<ScrollRestoration/>`** sin migrar antes a
+`createBrowserRouter`. Solo se monta dentro del layout público, así que navegar en el
+admin no resetea el scroll.
+
+⚠ Ninguna página debe volver a importar `Navbar` por su cuenta: se duplicaría.
+`Contacto.jsx` lo importaba y se le quitó en 2026-10.
+
 ### Grafo de dependencias (verificado con CodeGraph)
 
 ```
 App.jsx
-├── Navbar, Hero, Servicios            → ruta "/"
-├── BookingPage                        → ruta "/agendar"
-├── LoginPage                          → ruta "/login"
+├── LayoutPublico (local)               → layout sin path, envuelve las 4 rutas públicas
+│   ├── ScrollAlInicio (local)          → window.scrollTo(0,0) en cada cambio de ruta
+│   ├── Navbar                          → una sola vez, en todas las públicas
+│   └── Outlet
+│       ├── index: Hero, Servicios      → "/"
+│       ├── ServicesPage                → /servicios
+│       ├── ProductosPage               → /productos
+│       └── ContactoPage (Contacto.jsx) → /contacto
+├── BookingPage                        → /agendar (FUERA del layout, sin navbar)
+├── LoginPage                          → /login   (FUERA del layout, sin navbar)
 └── ProtectedRoute (ProtejerRuta.jsx)
-    └── AdminDashboard                 → layout de "/admin" (envuelve a AdminDashboard)
+    └── AdminDashboard                 → layout de "/admin"
         ├── Outlet
         ├── ResumenPage                → /admin         (índice)
         ├── ServiciosAdmin → ServicioForm → /admin/servicios
         ├── ProductosAdmin  → ProductoForm → /admin/productos
         ├── BarberosAdmin  → BarberoForm   → /admin/barberos
-        └── CitasAdmin                    → /admin/citas
+        ├── CitasAdmin                    → /admin/citas
+        └── ConfiguracionAdmin            → /admin/configuracion
 
 AuthProvider (main.jsx)
-└── useAuth()  consumido por: ProtejerRuta, LoginPage, AdminDashboard
+└── useAuth()  consumido por: ProtejerRuta, LoginPage, AdminDashboard, Navbar
 
 supabaseClient (singleton)
 └── importado por 11 archivos (21 llamadas): BookingPage, BookingForm,
     AuthContext y los 6 archivos de pages/admin que tocan datos
 ```
+
+⚠ El `Navbar` **solo** lo importa `src/App.jsx`. Ninguna página pública lo monta por
+su cuenta (antes lo hacía `Contacto.jsx` y quedaba duplicado dentro del layout).
 
 `Productos.jsx` y `BookingForm.jsx` **no** aparecen en este grafo: son código muerto
 (ver §4).
@@ -170,19 +205,34 @@ No los borres ni los "refactorices" por tu cuenta: son trabajo guardable del usu
 
 ## 5. Rutas
 
-Definidas todas en `src/App.jsx` (48 líneas):
+Definidas todas en `src/App.jsx` (3 bloques de `<Route>`: el layout público, las
+rutas sueltas y el panel):
 
 | Ruta | Elemento | Auth | Notas |
 |---|---|---|---|
-| `/login` | `<LoginPage />` | — | Tras login OK: `navigate('/admin')` |
-| `/admin` | `<ProtectedRoute><AdminDashboard /></ProtectedRoute>` | ✅ | layout con `<Outlet/>` |
+| `/login` | `<LoginPage />` | — | **Fuera** del layout público, sin navbar. Tras login OK: `navigate('/admin')` |
+| `/agendar` | `<BookingPage />` | — | **Fuera** del layout público, página completa sin navbar (decisión de diseño) |
+| — | `<LayoutPublico />` = `<Navbar />` + `<ScrollAlInicio />` + `<Outlet />` | — | layout sin `path`; envuelve las 4 rutas de abajo |
+| `/` (índice del layout) | `<Hero /><Services />` | — | |
+| `/servicios` | `<ServicesPage />` | — | la navbar lo marca activo |
+| `/productos` | `<ProductosPage />` | — | la navbar lo marca activo |
+| `/contacto` | `<ContactoPage />` (en `src/components/Contacto.jsx`) | — | la navbar lo marca activo |
+| `/admin` | `<ProtectedRoute><ConfiguracionProvider><AdminDashboard /></…>` | ✅ | layout con `<Outlet/>` |
 | `/admin` (index) | `<ResumenPage />` | ✅ | |
 | `/admin/servicios` | `<ServiciosAdmin />` | ✅ | |
 | `/admin/productos` | `<ProductosAdmin />` | ✅ | |
 | `/admin/barberos` | `<BarberosAdmin />` | ✅ | |
 | `/admin/citas` | `<CitasAdmin />` | ✅ | |
-| `/` | inline: `<Navbar /><Hero /><Servicios />` dentro de `bg-neutral-950 min-h-screen` | — | no usa `Navbar` la ruta `/agendar` |
-| `/agendar` | `<BookingPage />` | — | página completa, sin navbar |
+| `/admin/configuracion` | `<ConfiguracionAdmin />` | ✅ | |
+
+⚠ El `<Navbar />` de las 4 rutas públicas lo monta **solo** `LayoutPublico`. Si una
+página lo importa por su cuenta aparece duplicado (le pasó a `Contacto.jsx`).
+
+⚠ `ServiciosPage`, `ProductosPage` y `ContactoPage` conservan su propio
+`<div className="bg-neutral-950 min-h-screen …">` de raíz. Es redundante con el del
+layout (mismo color) pero produce un `min-h-screen` **anidado**: en páginas cortas el
+alto total es navbar + 100vh. No se tocó porque el cambio era solo de envoltura; si
+alguna vez sobra scroll, quita ese `min-h-screen` de la raíz de la página.
 
 No hay ruta `*` (404) ni catch-all. No hay redirección de la raíz a otra parte.
 
@@ -242,10 +292,12 @@ a `'Entrando...'`.
 ### 6.4 `src/components/` — sitio público
 
 - **`Navbar.jsx`** — logo "K" + "Nombre Barberia" / "Cortes de Cabello y Barba"; links
-  `Inicio / Servicios / Productos / Contacto` que son **`href="#"` placeholders**
-  (no navegan a ninguna sección); teléfono `+00 00000000`; botón `AGENDAR CITA` →
-  `navigate('/agendar')`. Los links se ocultan con `hidden md:flex`, el teléfono con
-  `hidden lg:block`. **No hay menú hamburguesa.**
+  `Inicio / Servicios / Productos / Contacto`; botón `AGENDAR CITA` →
+  `navigate('/agendar')`. **En `md+` es una fila estática** (los links y la sección
+  derecha con `hidden md:flex`). **En `<md` hay hamburguesa**: estado `menuAbierto`,
+  panel desplegable con los 4 links, el teléfono `+00 00000000` (`href="tel:..."`), la
+  sesión y `AGENDAR CITA`. La constante de módulo `enlaces` es la fuente única de los
+  links y la usan tanto la fila de `md+` como el panel.
 - **`Hero.jsx`** — dos columnas (`md:grid-cols-2`): texto con `navigate('/agendar')` en
   el CTA, y `/barber.jpg` en un contenedor `relative rounded-2xl overflow-hidden` con
   marca de agua y barra inferior (`absolute ... bg-black/70 backdrop-blur-sm`).
@@ -396,32 +448,40 @@ else        { setEstadoEnvio('exito') }
 
 ### 9.1 `AdminDashboard.jsx` — layout
 
-Array `links` (constante de módulo) de 5 entradas `{ to, label, fin }`; `fin: true` en
+Array `links` (constante de módulo) de 6 entradas `{ to, label, fin }`; `fin: true` en
 "Resumen" mapea a `end` de `NavLink` para que no quede activo en las subrutas. Clase
-dinámica con `className={({ isActive }) => ...}`. La identidad de la tienda es
-`EL TALLER` en serif + `Kromatik` debajo.
+dinámica con `className={({ isActive }) => ...}`. El ícono de cada link sale del mapa
+`iconoNav[link.label]` (SVG inline, sin librerías). La identidad de la tienda (nombre +
+logo) viene de `useConfiguracion()`, con esqueleto `animate-pulse` mientras carga.
 
-Raíz: `min-h-screen bg-ink-950 lg:flex`. El `<aside>` es
-`border-b border-ink-700 bg-ink-900 lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-64
-lg:shrink-0 lg:flex-col lg:border-b-0 lg:border-r`.
+Raíz: `flex min-h-screen flex-col bg-slate-50 lg:flex-row`, con `onKeyDown` en el
+contenedor para cerrar el menú con `Escape`.
 
-**Es responsive sin JavaScript, y no lleva `useState`:**
+**Es responsive con un único `useState` (`menuAbierto`), usado solo en `<lg`:**
 
-- `lg+`: rail lateral pegajoso, nav en columna, logout al pie separado por
-  `border-t border-ink-700`.
-- `<lg`: barra superior con la identidad + logout (`lg:hidden`), y la nav en fila
-  con `overflow-x-auto` y `whitespace-nowrap shrink-0` por ítem.
-- El logout se **renderiza dos veces** (una `lg:hidden`, otra `hidden lg:block`),
-  ambas llamando al mismo `logout` de `useAuth()`. Así sigue disponible en todos
-  los tamaños sin necesidad de estado.
-- **No hay menú hamburguesa**, por decisión de diseño (§12.3).
+- `lg+`: rail lateral `fixed ... lg:static lg:flex lg:w-64`, nav en columna, perfil +
+  logout al pie separado por `border-t border-slate-200`.
+- `<lg`: barra superior `lg:hidden` con la identidad (logo/nombre desde
+  `configuracion`) y el botón hamburguesa; al pulsarlo se despliega un panel
+  `fixed inset-x-0 top-14` con los 6 links, la tarjeta de perfil y el logout.
+- El panel se cierra con: clic en un link, clic en la capa exterior
+  (`fixed inset-0 z-30 bg-navy/20 lg:hidden`) o `Escape` (handler `onKeyDown`).
+  **No hay `useEffect` para escuchar teclado ni `document.addEventListener`**: el
+  `Escape` solo responde con el foco dentro del shell, que es justo cuando el menú
+  está abierto.
+- El botón hamburguesa lleva `aria-label` dinámico ("Abrir menú" / "Cerrar menú"),
+  `aria-expanded` y `aria-controls="menu-movil-admin"`; los paneles y los `<a>` de la
+  barra usan `focus-visible:ring-2 focus-visible:ring-primary`.
+- El logout sigue existiendo **una sola vez por tamaño**: en el `<aside>` de `lg+` y en
+  el panel móvil. Ya no se duplica dentro del mismo breakpoint.
+- Los íconos de hamburguesa y de cerrar son componentes locales
+  (`IconoHamburguesa` / `IconoCerrar`), SVG inline con `aria-hidden`.
 
-Indicador de ruta activa: `border-l-2 border-brass-400` + `text-bone-100`, con
-`border-transparent` en el inactivo para no desplazar el layout. **No lleva fondo
-de color** (antes era `bg-sky-500`).
+Indicador de ruta activa: fondo `bg-primary text-white` sobre el link activo
+(inactivo: `text-slate hover:bg-slate-100 hover:text-navy`).
 
-`main`: `min-w-0 flex-1 p-4 lg:p-8` con un contenedor `mx-auto max-w-6xl` que
-aloja el `<Outlet />`.
+`main`: `flex-1 p-4 lg:p-6` que aloja el `<Outlet />`. La barra superior de búsqueda
+sigue siendo decorativa (no filtra nada).
 
 ### 9.2 `ResumenPage.jsx`
 
@@ -1001,6 +1061,10 @@ token `ink-*`/`bone-*`/`terracotta-*`/`cream-*`.
 - El toggle de vista de `CitasAdmin` también usa `aria-pressed`; los botones de navegación
   de fecha llevan `aria-label` y el de hoy lleva `aria-current="date"`.
 - Los `<img>` de barbero en la tabla de citas llevan `alt={nombre}`.
+- Los dos menús hamburguesa (`AdminDashboard` en `<lg`, `Navbar` en `<md`) exponen
+  `aria-label` dinámico ("Abrir menú" / "Cerrar menú"), `aria-expanded` y
+  `aria-controls` apuntando al `id` del panel desplegable; los íconos SVG llevan
+  `aria-hidden` y el botón tiene `focus-visible:ring-2`.
 
 **Pendiente (no lo escales sin consultarlo, pero no lo empeores):**
 - Sin `aria-live` en los mensajes de error ni en los estados de carga. `CitasAdmin`
@@ -1027,14 +1091,15 @@ librerías visuales ni de UI: el layout es Tailwind inline y nada más.
 
 | Patrón | Dónde |
 |---|---|
-| `min-h-screen bg-cream-50 lg:flex` | raíz del shell en `AdminDashboard` |
-| `lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:shrink-0` | rail lateral en desktop |
-| `border-b … lg:border-b-0 lg:border-r` | el `<aside>` es barra superior en `<lg` y rail en `lg+` |
-| `border-cream-300` | bordes del sidebar |
-| `bg-cream-100` | fondo del sidebar |
-| `flex gap-1 overflow-x-auto … lg:flex-col lg:overflow-visible` | nav en fila con scroll horizontal en móvil, columna en `lg+` |
-| `lg:hidden` / `hidden lg:block` | logout: versión móvil en la barra superior, versión desktop al pie del rail |
-| `min-w-0 flex-1 p-4 lg:p-8` + `mx-auto max-w-6xl` | `main` y su contenedor de ancho máximo |
+| `flex min-h-screen flex-col bg-slate-50 lg:flex-row` | raíz del shell en `AdminDashboard` |
+| `fixed … lg:static lg:flex lg:w-64` | rail lateral en desktop; en `<lg` el `<aside>` queda `hidden` |
+| `lg:hidden` | barra superior con identidad + hamburguesa, y el panel desplegable (`fixed inset-x-0 top-14`) |
+| `border-slate-200` | bordes del sidebar, de la barra superior y del panel móvil |
+| `bg-white` | fondo del sidebar, de la barra superior y del panel móvil |
+| `fixed inset-0 z-30 … lg:hidden` | capa exterior que cierra el menú al tocar fuera (admin y `Navbar`) |
+| `z-40` / `z-50` | barra superior (z-40) y panel desplegable (z-50), por encima de la capa exterior |
+| `max-h-[calc(100vh-3.5rem)] overflow-y-auto` | el panel móvil hace scroll si los 6 links + perfil no caben |
+| `flex-1 p-4 lg:p-6` | `main`, que aloja el `<Outlet />` directamente |
 | `grid gap-4 lg:grid-cols-3` | panel inferior de `CitasAdmin` (sillones / distribución / recordatorios) |
 | `grid grid-cols-2 gap-4 lg:grid-cols-4` | las 4 métricas de `CitasAdmin` |
 | `overflow-x-auto` + `min-w-[900px]` en la `<table>` | las 7 columnas de citas no entran en móvil: la tabla hace scroll horizontal en vez de deformarse |
@@ -1048,8 +1113,9 @@ librerías visuales ni de UI: el layout es Tailwind inline y nada más.
 | `overflow-x-auto` + `min-w-[760px]` en la `<table>` | la tabla de `ServiciosAdmin` (5 columnas) también hace scroll horizontal en móvil |
 | `grid grid-cols-2 gap-4 lg:grid-cols-3` | las 3 métricas de `ServiciosAdmin` (la 3ª ocupa `col-span-2 lg:col-span-1`) |
 
-El shell del admin **sí es responsive** (antes el `<aside className="w-64">` era fijo
-y el admin era inutilizable en móvil — eso quedó resuelto).
+El shell del admin **sí es responsive**: en `<lg` la navegación vive en el menú
+hamburguesa y en `lg+` en el rail lateral. Es el **único** archivo del proyecto con
+`useState` para navegación en el admin, y ese estado no hace nada por encima de `lg`.
 
 ### 12.2 Sitio público (sin cambios)
 
@@ -1062,8 +1128,8 @@ y el admin era inutilizable en móvil — eso quedó resuelto).
 | `grid lg:grid-cols-3 gap-8` + `lg:col-span-2` | `BookingPage` |
 | `grid sm:grid-cols-2 gap-4` | selector de servicio, datos del cliente en el wizard |
 | `grid grid-cols-7 gap-2` | strip de días del wizard |
-| `hidden md:flex` | links del `Navbar` |
-| `hidden lg:block` | teléfono del `Navbar` |
+| `hidden md:flex` | links y sección derecha del `Navbar` |
+| `md:hidden` | hamburguesa del `Navbar` y su panel desplegable |
 | `lg:sticky lg:top-8 h-fit` | sidebar de resumen del wizard |
 | `flex flex-wrap gap-3` | chips de hora del wizard |
 | `px-4` | `LoginPage` y contenedores centrados pequeños |
@@ -1073,14 +1139,15 @@ Gaps y paddings en uso: `gap-2/3/4/6/8/10/12`, `p-4/p-5/p-6/p-8`, `mb-2/4/6/8/10
 
 ### 12.3 Puntos débiles preexistentes (no los arregles sin avisar)
 
-- `Navbar`: los links desaparecen bajo `md` y **no hay menú alternativo**; el
-  teléfono desaparece bajo `lg`. **No hay hamburguesa, por decisión de diseño.**
+- `Navbar`: los links **y** la sección derecha (sesión + `AGENDAR CITA`) desaparecen
+  bajo `md`, pero ahora hay **menú hamburguesa** que los recupera, incluido el
+  teléfono `+00 00000000` que antes solo se veía en `lg+`.
 - `BookingPage`: los `dias` son una tira fija de 7 columnas sin scroll.
 - `App.css` (muerto) sí tenía sus propios `@media (max-width: 1024px)`, pero no se
   aplica.
-- `AdminDashboard` no lleva `useState`: el paso de barra superior a rail lateral es
-  **solo CSS** (`lg:`). No introduzcas un menú hamburguesa para "mejorarlo"; sería
-  añadir estado y JS a un shell que ya funciona sin ellos.
+- Los dos menús hamburguesa (admin y público) cierran con `Escape` **solo si el foco
+  está dentro**, porque el listener es un `onKeyDown` en el contenedor y no un
+  `document.addEventListener`. Es deliberado: evita `useEffect` + listener global.
 
 Al añadir UI responsiva, sigue los patrones de §12.1 (admin) o §12.2 (público)
 según la zona, en vez de inventar un sistema.
@@ -1380,10 +1447,11 @@ pide.
   inline. La única excepción es el `@theme` en `src/index.css`, que es la fuente de
   los tokens del admin.
 - **No traduzcas la UI al inglés.** Todo el texto visible va en español.
-- **No añadas un menú hamburguesa, un sistema de toasts, skeletons o un error
-  boundary** "de paso". Son features, no arreglos. El shell del admin ya resuelve
-  móvil con CSS (`lg:`) y **no lleva `useState` a propósito**; no lo "mejores" con
-  estado.
+- **No añadas un sistema de toasts, skeletons o un error boundary** "de paso". Son
+  features, no arreglos. El menú hamburguesa ya existe en los dos shells
+  (`AdminDashboard` en `<lg`, `Navbar` en `<md`): si lo tocas, **no añadas
+  `useEffect` + `addEventListener('keydown')`** para el `Escape`; el patrón del repo es
+  `onKeyDown` en el contenedor del shell (ver §9.1 y §12.3).
 - **No elimines los placeholders** (`"Nombre Barberia"`, `"Nombre"`, `"+00 00000000"`,
   `Lorem ipsum`, `"Kromatik Admin"`) sin que el usuario los pida: son marcadores
   pendientes de sustituir por los datos reales del negocio.
@@ -1417,8 +1485,8 @@ arreglar de paso:**
 | 4 | ~~`BookingPage.jsx:157,169`~~ | **RESUELTO** (2026-10): la tarjeta usa `categoria` (antes `s.etiqueta`), `formatoDuracion(s.duracion)` y `Number(s.costo)`, todo desde la tabla real. |
 | 5 | ~~`BookingPage.jsx`~~ | **RESUELTO** (2026-10): el paso 1 consulta `servicios` (`nombre, categoria, descripcion, costo, duracion, imagen`), con estado de carga y vacío ("Aún no hay servicios disponibles"). |
 | 6 | `citas.servicio` | Sigue siendo texto plano, no FK → se pueden agendar servicios inexistentes desde otras vías. **Lo de la agenda ocupada sí se resolvió**: RPC `horas_ocupadas` + índice único `citas_slot_unico` (§10.5). Lo que **no** hay es un modelo de horarios/slots: las franjas siguen siendo constantes hardcodeadas en `BLOQUES`. |
-| 7 | ~~`AdminDashboard.jsx:18`~~ | **RESUELTO** en el rediseño: el `<aside>` fijo `w-64` pasó a ser barra superior en `<lg` y rail en `lg+`, sin `useState`. Ver §12.1. |
-| 8 | `Navbar.jsx` | Links `href="#"`; sin menú móvil; sin scroll a secciones (las secciones no tienen `id`). **No lo toques como parte del rediseño del admin.** |
+| 7 | ~~`AdminDashboard.jsx:18`~~ | **RESUELTO** (2026-10): el `<aside>` fijo `w-64` pasó a barra superior en `<lg` + rail en `lg+`; además se añadió el menú hamburguesa con `menuAbierto`. Ver §9.1 y §12.1. |
+| 8 | ~~`Navbar.jsx`~~ | **PARCIALMENTE RESUELTO** (2026-10): ya hay menú hamburguesa en `<md` con links, teléfono, sesión y `AGENDAR CITA`. **Sigue pendiente**: los `href="servicios" / productos / contacto` no tienen sección con `id` a la que saltar, así que recargan la ruta en vez de navegar; y el `Escape` solo cierra con el foco dentro del `<nav>` (§12.3). |
 | 9 | Todos los `cargarX()` | El `error` de Supabase se descarta; un fallo de red se ve como "lista vacía". Esto afecta también a los estados vacíos del admin, que son sobrios a propósito para no mentir cuando la petición falló. |
 | 10 | Los tres `*Form` | Mensaje de error único y genérico; nunca se muestra el error real. `guardando` solo se resetea en el `catch`. |
 | 11 | Los tres `*Form` | `URL.createObjectURL` nunca se revoca. |
