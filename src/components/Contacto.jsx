@@ -1,5 +1,4 @@
 import { Link } from 'react-router-dom'
-import Navbar from '../components/Navbar'
 
 const sedes = [
   {
@@ -50,8 +49,6 @@ const garantias = [
 export default function ContactoPage() {
   return (
     <div className="bg-neutral-950 min-h-screen text-white">
-      <Navbar />
-
       <main>
         {/* Hero de la página */}
         <section className="px-8 pt-16 pb-10 max-w-7xl mx-auto">

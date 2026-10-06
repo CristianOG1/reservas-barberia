@@ -1,4 +1,5 @@
-import { Routes, Route } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Routes, Route, Outlet, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
 import Services from './components/Servicios'
@@ -17,9 +18,35 @@ import ProductosPage from './pages/ProductosPage'
 import ContactoPage from './components/Contacto'
 import ServicesPage from './pages/ServicesPage'
 
+// El router es <Routes> plano, no un data router, así que <ScrollRestoration/> de
+// react-router no aplica aquí. Cada navegación pública arranca desde arriba.
+function ScrollAlInicio() {
+  const { pathname } = useLocation()
+
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+
+  return null
+}
+
+// Layout de las páginas públicas: Navbar arriba + contenido debajo, sobre el mismo
+// fondo oscuro. El Navbar vive aquí una sola vez, así que el menú hamburguesa de
+// celulares y el estado del menú se heredan en todas las páginas sin duplicar nada.
+function LayoutPublico() {
+  return (
+    <div className="bg-neutral-950 min-h-screen">
+      <ScrollAlInicio />
+      <Navbar />
+      <Outlet />
+    </div>
+  )
+}
+
 function App() {
   return (
     <Routes>
+      {/* Fuera del layout público: login y todo el panel, sin Navbar. */}
       <Route path="/login" element={<LoginPage />} />
       <Route
         path="/admin"
@@ -40,20 +67,24 @@ function App() {
         <Route path="citas" element={<CitasAdmin />} />
         <Route path="configuracion" element={<ConfiguracionAdmin />} />
       </Route>
-      <Route
-        path="/"
-        element={
-          <div className="bg-neutral-950 min-h-screen">
-            <Navbar />
-            <Hero />
-            <Services />
-          </div>
-        }
-      />
-      <Route path="/productos" element={<ProductosPage />} />
+
+      {/* Agendar sigue fuera del layout: es una pantalla completa, sin navbar. */}
       <Route path="/agendar" element={<BookingPage />} />
-      <Route path="/contacto" element={<ContactoPage />} />
-      <Route path="/servicios" element={<ServicesPage />} />
+
+      <Route element={<LayoutPublico />}>
+        <Route
+          index
+          element={
+            <>
+              <Hero />
+              <Services />
+            </>
+          }
+        />
+        <Route path="productos" element={<ProductosPage />} />
+        <Route path="servicios" element={<ServicesPage />} />
+        <Route path="contacto" element={<ContactoPage />} />
+      </Route>
     </Routes>
   )
 }
