@@ -25,6 +25,7 @@ export default function Productos() {
       .from('productos')
       .select('*')
       .order('created_at', { ascending: true })
+      .limit(4)
 
     if (errorSupabase) {
       console.error(errorSupabase)
