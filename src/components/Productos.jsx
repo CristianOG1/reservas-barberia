@@ -1,46 +1,43 @@
-// Productos.jsx
-const productos = [
-  {
-    numero: '01',
-    categoria: 'CUIDADO',
-    badge: ' Favorito',
-    titulo: 'Aceite para Barba',
-    descripcion: 'Lorem ipsum dolor sit, amet consectetur adipisicing elit. Hic culpa fugiat assumenda.',
-    precio: '$350 MXN',
-    destacado: false,
-  },
-  {
-    numero: '02',
-    categoria: 'PEINADO',
-    badge: 'Nuevo',
-    titulo: 'Cera Mate',
-    descripcion: 'Lorem ipsum dolor sit, amet consectetur adipisicing elit. Hic culpa fugiat assumenda.',
-    precio: '$280 MXN',
-    destacado: false,
-  },
-  {
-    numero: '03',
-    categoria: 'CUIDADO',
-    badge: 'Más vendido',
-    titulo: 'Shampoo Carbón',
-    descripcion: 'Lorem ipsum dolor sit, amet consectetur adipisicing elit. Hic culpa fugiat assumenda.',
-    precio: '$320 MXN',
-    destacado: true,
-  },
-  {
-    numero: '04',
-    categoria: 'ACABADO',
-    badge: 'Clásico',
-    titulo: 'Aftershave',
-    descripcion: 'Lorem ipsum dolor sit, amet consectetur adipisicing elit. Hic culpa fugiat assumenda.',
-    precio: '$400 MXN',
-    destacado: false,
-  },
-]
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { supabase } from '../supabaseClient'
+
+// `productos.precio` es numérico: lo mostramos como $350 MXN.
+function formatoPrecio(valor) {
+  const n = Number(valor)
+  return Number.isFinite(n) ? `$${n.toLocaleString('es-MX')} MXN` : '—'
+}
 
 export default function Productos() {
+  const [productos, setProductos] = useState([])
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    cargarProductos()
+  }, [])
+
+  const cargarProductos = async () => {
+    setCargando(true)
+    setError(false)
+
+    const { data, error: errorSupabase } = await supabase
+      .from('productos')
+      .select('*')
+      .order('created_at', { ascending: true })
+
+    if (errorSupabase) {
+      console.error(errorSupabase)
+      setError(true)
+      setProductos([])
+    } else {
+      setProductos(data || [])
+    }
+    setCargando(false)
+  }
+
   return (
-    <section className="px-8 py-16">
+    <section id="productos" className="px-8 py-16 scroll-mt-4">
       {/* Encabezado */}
       <div className="grid md:grid-cols-2 gap-8 mb-12">
         <div>
@@ -53,59 +50,67 @@ export default function Productos() {
           </h2>
         </div>
         <p className="text-neutral-400 text-sm self-end">
-          Lorem ipsum dolor sit, amet consectetur adipisicing elit. Hic culpa fugiat assumenda. Quis dicta autem doloremque adipisci distinctio natus minima aliquid debitis! Ipsa illo ab, dolores in deleniti ex veritatis?
+          Los mismos productos que usamos en la silla, disponibles para que los lleves a casa.
         </p>
       </div>
 
-      {/* Grid de tarjetas */}
-      <div className="grid md:grid-cols-4 gap-4">
-        {productos.map((p) => (
-          <div
-            key={p.numero}
-            className={`rounded-xl p-5 border-3 ${
-              p.destacado
-                ? 'bg-neutral-900 border-yellow-950'
-                : 'bg-neutral-900 border-neutral-800'
-            }`}
+      {/* Estados: cargando / error / vacío / lista */}
+      {cargando ? (
+        <p className="text-neutral-400 text-sm">Cargando productos...</p>
+      ) : error ? (
+        <div className="text-sm">
+          <p className="text-neutral-400 mb-3">No pudimos cargar los productos.</p>
+          <button
+            onClick={cargarProductos}
+            className="text-white border border-neutral-700 hover:border-neutral-500 px-4 py-2 rounded-md transition-colors"
           >
-            {/* Fila superior: número / categoría + badge */}
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-neutral-500 text-xs">
-                {p.numero} / {p.categoria}
-              </span>
-              <span
-                className={`text-xs px-2 py-1 rounded-full ${
-                  p.destacado
-                    ? 'bg-yellow-700 text-white'
-                    : 'bg-neutral-800 text-neutral-300'
-                }`}
-              >
-                {p.badge}
-              </span>
-            </div>
+            Reintentar
+          </button>
+        </div>
+      ) : productos.length === 0 ? (
+        <p className="text-neutral-400 text-sm">Pronto publicaremos nuestros productos.</p>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {productos.map((p) => (
+            <div
+              key={p.id}
+              className="rounded-xl p-5 border border-neutral-800 bg-neutral-900"
+            >
+              {p.imagen && (
+                <img
+                  src={p.imagen}
+                  alt={p.nombre}
+                  className="w-full h-40 object-cover rounded-lg mb-4"
+                />
+              )}
 
-            <h3 className="text-white font-semibold mb-2">{p.titulo}</h3>
-            <p className="text-neutral-400 text-sm mb-6">{p.descripcion}</p>
+              {p.categoria && (
+                <p className="text-neutral-500 text-xs mb-2">{p.categoria}</p>
+              )}
 
-            {/* Fila inferior: solo precio, sin compra */}
-            <div className="flex justify-between items-end border-t border-neutral-800 pt-4">
-              <div>
-                <p className="text-neutral-500 text-[10px]">PRECIO</p>
-                <p className={`text-sm font-semibold ${p.destacado ? 'text-yellow-600' : 'text-white'}`}>
-                  {p.precio}
-                </p>
+              <h3 className="text-white font-semibold mb-2">{p.nombre}</h3>
+              <p className="text-neutral-400 text-sm mb-6">
+                {p.descripcion || 'Sin descripción disponible.'}
+              </p>
+
+              {/* Fila inferior: solo precio, sin compra en línea */}
+              <div className="flex justify-between items-end border-t border-neutral-800 pt-4">
+                <div>
+                  <p className="text-neutral-500 text-[10px]">PRECIO</p>
+                  <p className="text-amber-400 text-sm font-semibold">{formatoPrecio(p.precio)}</p>
+                </div>
+                <span className="text-neutral-500 text-[10px]">SOLO EN TIENDA</span>
               </div>
-              <span className="text-neutral-500 text-[10px]">SOLO EN TIENDA</span>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Link inferior */}
       <div className="text-right mt-8">
-        <a href="#" className="text-white text-sm font-semibold">
+        <Link to="/productos" className="text-white text-sm font-semibold hover:text-amber-400 transition-colors">
           VER TODOS LOS PRODUCTOS →
-        </a>
+        </Link>
       </div>
     </section>
   )
