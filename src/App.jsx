@@ -17,6 +17,7 @@ import { ConfiguracionProvider } from './context/ConfiguracionProvider'
 import ProductosPage from './pages/ProductosPage'
 import ContactoPage from './components/Contacto'
 import ServicesPage from './pages/ServicesPage'
+import Productos from './components/Productos'
 
 // El router es <Routes> plano, no un data router, así que <ScrollRestoration/> de
 // react-router no aplica aquí. Cada navegación pública arranca desde arriba.
@@ -78,6 +79,7 @@ function App() {
             <>
               <Hero />
               <Services />
+              <Productos />
             </>
           }
         />
