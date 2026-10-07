@@ -1008,7 +1008,7 @@ export default function CitasAdmin() {
              (H-24 y H-2 antes de la cita). El conteo de arriba sí es real. */}
         <div className="rounded-xl border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-5 py-4">
-            <h3 className="font-serif text-base text-navy">Recordatorios SMS / WhatsApp</h3>
+            <h3 className="font-serif text-base text-navy">Recordatorios via WhatsApp</h3>
             <p className="mt-0.5 text-xs text-slate">
               <strong className="text-navy">{pendientesManana}</strong> citas por confirmar mañana
             </p>
@@ -1057,4 +1057,4 @@ export default function CitasAdmin() {
       )}
     </div>
   )
-}
+} 
