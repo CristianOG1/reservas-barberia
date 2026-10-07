@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { supabase } from '../supabaseClient'
 
 const PASOS = ['Servicio', 'Fecha & Hora', 'Tus Datos']
@@ -53,28 +54,75 @@ function duracionAMinutos(valor) {
   return Number.isFinite(n) ? n : 0
 }
 
-export default function BookingPage() {
-  const [fechaElegida, setFechaElegida] = useState(null) // 'YYYY-MM-DD'
-  const [horaElegida, setHoraElegida] = useState(null) // 'HH:MM' (24 h)
+/* ---- Borrador de la reservación ----
+   Si el cliente llega al final sin sesión, se guarda lo que eligió en
+   sessionStorage, se le manda a /login y al volver se restaura todo. Se borra
+   al confirmar la cita o a las 2 horas. */
+const CLAVE_BORRADOR = 'borradorReserva'
+const VIGENCIA_BORRADOR_MS = 2 * 60 * 60 * 1000
 
-  const [pasoActual, setPasoActual] = useState(1) // 1, 2 o 3
+function guardarBorrador(datos) {
+  try {
+    sessionStorage.setItem(CLAVE_BORRADOR, JSON.stringify({ ...datos, guardadoEn: Date.now() }))
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+function borrarBorrador() {
+  try {
+    sessionStorage.removeItem(CLAVE_BORRADOR)
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+function leerBorrador() {
+  try {
+    const texto = sessionStorage.getItem(CLAVE_BORRADOR)
+    if (!texto) return null
+    const b = JSON.parse(texto)
+    if (Date.now() - b.guardadoEn > VIGENCIA_BORRADOR_MS) return null
+    // Si el día elegido ya pasó, se conserva todo menos la fecha y la hora.
+    if (b.fechaElegida && b.fechaElegida < FechaISO(new Date())) {
+      b.fechaElegida = null
+      b.horaElegida = null
+    }
+    return b
+  } catch {
+    return null
+  }
+}
+
+export default function BookingPage() {
+  const navigate = useNavigate()
+  // `cargando`: mientras Supabase recupera la sesión guardada (al recargar la página).
+  const { session, cargando: cargandoSesion } = useAuth()
+
+  // Se lee una sola vez al montar: si viene de /login trae lo que ya había elegido.
+  const [borrador] = useState(leerBorrador)
+
+  const [fechaElegida, setFechaElegida] = useState(borrador?.fechaElegida ?? null) // 'YYYY-MM-DD'
+  const [horaElegida, setHoraElegida] = useState(borrador?.horaElegida ?? null) // 'HH:MM' (24 h)
+
+  const [pasoActual, setPasoActual] = useState(borrador?.pasoActual ?? 1) // 1, 2 o 3
 
   const [servicios, setServicios] = useState([])
   const [cargandoServicios, setCargandoServicios] = useState(true)
   // Selección múltiple: el id va de vuelta en el objeto para deseleccionar fácil.
-  const [serviciosElegidos, setServiciosElegidos] = useState([])
+  const [serviciosElegidos, setServiciosElegidos] = useState(borrador?.serviciosElegidos ?? [])
 
   // Productos (opcional, selección múltiple)
   const [productos, setProductos] = useState([])
-  const [productosElegidos, setProductosElegidos] = useState([])
+  const [productosElegidos, setProductosElegidos] = useState(borrador?.productosElegidos ?? [])
 
   // null = "Cualquier barbero" (opción por defecto, siempre disponible)
   const [barberos, setBarberos] = useState([])
   const [cargandoBarberos, setCargandoBarberos] = useState(true)
-  const [barberoElegido, setBarberoElegido] = useState(null)
+  const [barberoElegido, setBarberoElegido] = useState(borrador?.barberoElegido ?? null)
   const barberoIdElegido = barberoElegido?.id || null
 
-  const [form, setForm] = useState({ nombre: '', telefono: '', correo: '', notas: '' })
+  const [form, setForm] = useState(borrador?.form ?? { nombre: '', telefono: '', correo: '', notas: '' })
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value })
 
   const [estadoEnvio, setEstadoEnvio] = useState('idle') // idle | enviando | error | slot | exito
@@ -86,7 +134,7 @@ export default function BookingPage() {
   const [horasOcupadas, setHorasOcupadas] = useState([])
 
   // Navegación de semanas
-  const [semanaBase, setSemanaBase] = useState(() => lunesDe(new Date()))
+  const [semanaBase, setSemanaBase] = useState(() => lunesDe(borrador?.semanaBase ? new Date(borrador.semanaBase) : new Date()))
 
   // Reloj congelado al montar: `new Date()` dentro del render es impuro
   // (react-hooks/purity) y haría que "hoy" cambiara entre renders.
@@ -271,8 +319,33 @@ export default function BookingPage() {
   // Duración estimada: solo la de los servicios. Los productos no ocupan silla.
   const duracionTotalMin = serviciosElegidos.reduce((a, s) => a + duracionAMinutos(s.duracion), 0)
 
+  /* ---- Reservar requiere sesión ----
+     Explorar y elegir es libre; al confirmar se pide iniciar sesión. Si no hay
+     sesión se guarda la selección y se manda a /login con `volverA`, para que
+     al entrar regrese aquí. Devuelve true si redirigió. */
+  const requiereLogin = () => {
+    // Aún no sabemos si hay sesión: no se redirige ni se deja pasar, solo se espera.
+    if (cargandoSesion) return true
+    if (session) return false
+    guardarBorrador({
+      serviciosElegidos,
+      productosElegidos,
+      barberoElegido,
+      fechaElegida,
+      horaElegida,
+      pasoActual,
+      form,
+      semanaBase: semanaBase.toISOString(),
+    })
+    navigate('/login', { state: { volverA: '/agendar' } })
+    return true
+  }
+
   /* ---- Guardado ---- */
   const handleConfirmar = async () => {
+    // Seguro extra: aunque el modal esté abierto, sin sesión no se inserta nada.
+    if (requiereLogin()) return
+
     setEstadoEnvio('enviando')
 
     // Si el cliente eligió "Cualquier barbero", se le asigna el primer barbero
@@ -322,6 +395,7 @@ export default function BookingPage() {
         setEstadoEnvio('error')
       }
     } else {
+      borrarBorrador()
       setEstadoEnvio('exito')
     }
   }
@@ -837,12 +911,17 @@ export default function BookingPage() {
                 </p>
 
                 <button
-                    onClick={() => { setEstadoEnvio('idle'); setMostrarResumen(true) }}
-                    disabled={serviciosElegidos.length === 0 || !fechaElegida || !horaElegida || !form.nombre || !form.telefono || !form.correo || estadoEnvio === 'enviando'}
+                    onClick={() => { if (requiereLogin()) return; setEstadoEnvio('idle'); setMostrarResumen(true) }}
+                    disabled={serviciosElegidos.length === 0 || !fechaElegida || !horaElegida || !form.nombre || !form.telefono || !form.correo || estadoEnvio === 'enviando' || cargandoSesion}
                     className="w-full bg-white text-neutral-900 font-semibold py-3 rounded-md mt-5 disabled:opacity-30"
                   >
-                    CONFIRMAR RESERVACIÓN →
+                    {session || cargandoSesion ? 'CONFIRMAR RESERVACIÓN →' : 'INICIAR SESIÓN PARA RESERVAR →'}
                   </button>
+                  {!session && !cargandoSesion && (
+                    <p className="text-neutral-500 text-xs mt-2">
+                      Guardamos lo que elegiste: al iniciar sesión regresas aquí para confirmar.
+                    </p>
+                  )}
                   {estadoEnvio === 'slot' && (
                     <p className="text-amber-400 text-xs mt-2">Ese horario acaba de ser tomado, elige otro.</p>
                 )}
