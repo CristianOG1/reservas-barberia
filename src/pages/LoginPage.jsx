@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../supabaseClient'
 
 export default function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  // Si venimos de /agendar sin sesión, `volverA` dice a dónde regresar tras entrar.
+  const volverA = location.state?.volverA
 
   const [esRegistro, setEsRegistro] = useState(false)
   const [email, setEmail] = useState('')
@@ -52,7 +55,9 @@ export default function LoginPage() {
         const user = data?.user || data?.session?.user
         const role = user?.user_metadata?.role || user?.role
 
-        if (role === 'admin') {
+        if (volverA) {
+          navigate(volverA)
+        } else if (role === 'admin') {
           navigate('/admin')
         } else {
           navigate('/')
@@ -67,6 +72,12 @@ export default function LoginPage() {
         <h1 className="text-white text-xl font-semibold mb-2 text-center">
           {esRegistro ? 'Crear Cuenta' : 'Iniciar Sesión'}
         </h1>
+
+        {volverA && (
+          <p className="text-amber-400 text-xs text-center">
+            Inicia sesión o crea tu cuenta para confirmar tu cita. Tu selección está guardada.
+          </p>
+        )}
 
         {esRegistro && (
           <input
