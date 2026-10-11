@@ -377,6 +377,7 @@ export default function BookingPage() {
       hora: horaElegida,            // 'HH:MM' 24 h
       total,
       barbero_id: barberoId,
+      cliente_id: session.user.id,
     }])
 
     if (error) {
