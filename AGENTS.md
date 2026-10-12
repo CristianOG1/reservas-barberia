@@ -8,13 +8,17 @@
 
 ## 1. Propósito del proyecto
 
-Sitio web de una **barbería** (cortes de cabello y barba) con dos partes:
+Sitio web de una **barbería** (cortes de cabello y barba) con tres partes:
 
-- **Sitio público**: landing page con hero y catálogo de servicios, y un flujo de
-  reserva de citas en 3 pasos.
+- **Sitio público**: landing page con hero y catálogos (servicios y productos), y un
+  flujo de reserva de citas en 3 pasos (`/agendar`).
 - **Panel de administración** (`/admin`): protegido por autenticación, para dar de
   alta/editar/borrar **servicios**, **productos** y **barberos**, y para **gestionar
   las citas** (ver detalle y cambiar su estado).
+- **Portal del cliente** (`/cliente`): protegido por el mismo `ProtectedRoute`
+  (cualquier cuenta autenticada entra; ver trampa de roles en §5 y §18.14). El
+  cliente autenticado ve solo **sus** citas (`cliente ve sus citas`, §10.5) y puede
+  cancelarlas o reagendarlas vía RPC.
 
 Datos y autenticación viven 100% en **Supabase**. No hay backend propio: es una SPA
 que habla directo con Supabase desde el navegador.
@@ -78,15 +82,20 @@ index.html  (#root)
 ni `loaders`, ni `actions`, ni data fetching en el router: son `<Route>` + `<Routes>`
 de `react-router-dom` v7 y componentes que hacen `useEffect`.
 
-**Hay dos layouts, ambos como `<Route>` sin `path` + `<Outlet/>`** (2026-10):
+**Hay tres layouts, todos como `<Route>` con `<Outlet/>`** (2026-10):
 
-- `LayoutPublico` (local en `src/App.jsx`): `bg-neutral-950 min-h-screen` +
-  `<ScrollAlInicio />` + `<Navbar />` + `<Outlet />`. Aloja **`/` (índice),
+- `LayoutPublico` (local en `src/App.jsx`, sin `path`): `bg-neutral-950 min-h-screen`
+  + `<ScrollAlInicio />` + `<Navbar />` + `<Outlet />`. Aloja **`/` (índice),
   `/servicios`, `/productos` y `/contacto`**. El Navbar vive **una sola vez** aquí,
   así que el menú hamburguesa se hereda en todas las páginas sin duplicar estado ni
   lógica.
 - `AdminDashboard` (`src/pages/admin/AdminDashboard.jsx`): layout de `/admin`, dentro
   de `<ProtectedRoute>` + `<ConfiguracionProvider>`, con su propio rail.
+- `ClienteDashboard` (`src/pages/cliente/ClienteDashboard.jsx`): layout de `/cliente`
+  (con `path="/cliente"`), también dentro de `<ProtectedRoute>` +
+  `<ConfiguracionProvider>`, con rail lateral y menú hamburguesa. Es una copia ligera
+  del shell del admin: mismos tokens, pero sin la búsqueda ni el badge "ADMIN SUITE"
+  y con un solo link ("Mis citas"). §9.6.
 
 ⚠ `/login` y `/agendar` quedan **fuera** de `LayoutPublico` a propósito: login no
 debe llevar navbar y `/agendar` es pantalla completa sin navbar (§5). No los muevas
@@ -110,35 +119,51 @@ App.jsx
 │   ├── ScrollAlInicio (local)          → window.scrollTo(0,0) en cada cambio de ruta
 │   ├── Navbar                          → una sola vez, en todas las públicas
 │   └── Outlet
-│       ├── index: Hero, Servicios      → "/"
+│       ├── index: Hero, Servicios, Productos → "/"
 │       ├── ServicesPage                → /servicios
 │       ├── ProductosPage               → /productos
 │       └── ContactoPage (Contacto.jsx) → /contacto
 ├── BookingPage                        → /agendar (FUERA del layout, sin navbar)
 ├── LoginPage                          → /login   (FUERA del layout, sin navbar)
-└── ProtectedRoute (ProtejerRuta.jsx)
-    └── AdminDashboard                 → layout de "/admin"
-        ├── Outlet
-        ├── ResumenPage                → /admin         (índice)
-        ├── ServiciosAdmin → ServicioForm → /admin/servicios
-        ├── ProductosAdmin  → ProductoForm → /admin/productos
-        ├── BarberosAdmin  → BarberoForm   → /admin/barberos
-        ├── CitasAdmin                    → /admin/citas
-        └── ConfiguracionAdmin            → /admin/configuracion
+├── ProtectedRoute (ProtejerRuta.jsx)
+│   └── AdminDashboard                 → layout de "/admin"
+│       ├── Outlet
+│       ├── ResumenPage                → /admin         (índice)
+│       ├── ServiciosAdmin → ServicioForm → /admin/servicios
+│       ├── ProductosAdmin  → ProductoForm → /admin/productos
+│       ├── BarberosAdmin  → BarberoForm   → /admin/barberos
+│       ├── CitasAdmin                    → /admin/citas
+│       └── ConfiguracionAdmin            → /admin/configuracion
+└── ProtectedRoute (mismo guard, §18.14)
+    └── ClienteDashboard               → layout de "/cliente"
+        └── Outlet
+            └── CitasCliente           → /cliente (índice)
 
 AuthProvider (main.jsx)
-└── useAuth()  consumido por: ProtejerRuta, LoginPage, AdminDashboard, Navbar
+└── useAuth()  consumido por: ProtejerRuta, LoginPage, AdminDashboard,
+    ClienteDashboard, CitasCliente, Navbar y BookingPage
+
+useConfirmarCita (src/hooks)
+└── usado por ResumenPage y CitasAdmin, no por CitasCliente (que se sirve de RPC)
 
 supabaseClient (singleton)
-└── importado por 11 archivos (21 llamadas): BookingPage, BookingForm,
-    AuthContext y los 6 archivos de pages/admin que tocan datos
+└── importado por: BookingPage, BookingForm, Servicios (público), Productos (público),
+    ProductosPage, ServicesPage, AuthContext, ConfiguracionProvider, LoginPage (signUp),
+    CitasCliente, useConfirmarCita y los 6 archivos de pages/admin que tocan datos
 ```
+
+⚠ **`Productos.jsx` (el público) ya NO es código muerto**: `App.jsx` lo monta en el
+índice de `/`, entre `<Servicios />` y el layout. Lo aviva el pull 853ca9f..8809213.
+`BookingForm.jsx` sigue siendo código muerto.
 
 ⚠ El `Navbar` **solo** lo importa `src/App.jsx`. Ninguna página pública lo monta por
 su cuenta (antes lo hacía `Contacto.jsx` y quedaba duplicado dentro del layout).
 
-`Productos.jsx` y `BookingForm.jsx` **no** aparecen en este grafo: son código muerto
-(ver §4).
+⚠ `BookingForm.jsx` sigue insertando como `anon` (la política `Cualquiera puede
+agendar` la sigue admitiendo), pero **desalinea con el modelo vigente**: la cita
+queda sin `cliente_id` (el portal `/cliente` no la ve) y sin las validaciones de
+`BookingPage`. Si se resucita ese modal hay que rehacerle el payload y el flujo de
+sesión.
 
 ---
 
@@ -160,17 +185,30 @@ barberia/
 │   ├── App.css                         ⚠ CÓDIGO MUERTO (CSS del template Vite, no se importa)
 │   ├── assets/                         hero.png, react.svg, vite.svg — sin uso
 │   ├── context/
-│   │   └── AuthContext.jsx             AuthProvider + useAuth
+│   │   ├── AuthContext.jsx             AuthProvider + useAuth
+│   │   ├── configuracion.js            solo `createContext` (partido en 3 archivos, §9.1)
+│   │   ├── ConfiguracionProvider.jsx   carga la fila id = 1 de `configuracion`
+│   │   └── useConfiguracion.js         hook del contexto de configuración
+│   ├── hooks/
+│   │   └── useConfirmarCita.js         confirmar con optimistic update (§9.7)
 │   ├── components/
-│   │   ├── Navbar.jsx                  nav pública
-│   │   ├── Hero.jsx                    hero
-│   │   ├── Servicios.jsx               grid de servicios (datos hardcodeados)
-│   │   ├── Productos.jsx               ⚠ CÓDIGO MUERTO (no importado)
+│   │   ├── Navbar.jsx                  nav pública (layout público) + hamburguesa <md
+│   │   ├── Hero.jsx                    hero de la landing
+│   │   ├── Servicios.jsx               grid de servicios DESDE Supabase
+│   │   ├── Productos.jsx               grid de productos DESDE Supabase (ya se usa en "/")
+│   │   ├── Contacto.jsx                página /contacto completa (exporta ContactoPage)
 │   │   ├── BookingForm.jsx             ⚠ CÓDIGO MUERTO (no importado, superseded por BookingPage)
-│   │   └── ProtejerRuta.jsx            ProtectedRoute
+│   │   └── ProtejerRuta.jsx            ProtectedRoute (roles /admin y /cliente)
+│   ├── utils/
+│   │   └── rutaInicioPorRol.js        ruta de inicio según el rol (helper único, §5)
 │   └── pages/
-│       ├── BookingPage.jsx             wizard de 3 pasos (362 líneas, el más grande)
-│       ├── LoginPage.jsx               login
+│       ├── BookingPage.jsx             wizard de 3 pasos (985 líneas, el más grande)
+│       ├── LoginPage.jsx               login + registro (signUp) + retorno con `volverA`
+│       ├── ServicesPage.jsx            página /servicios (catálogo con datos de la BD)
+│       ├── ProductosPage.jsx           página /productos (catálogo con filtros y stock)
+│       ├── cliente/
+│       │   ├── ClienteDashboard.jsx    layout de /cliente: rail + hamburguesa (199 líneas)
+│       │   └── CitasCliente.jsx        "Mis citas": listado, cancelar y reagendar (352 líneas)
 │       └── admin/
 │           ├── AdminDashboard.jsx      layout: <aside> + <NavLink> + <Outlet> + logout
 │           ├── ResumenPage.jsx         tarjetas de totales + citas de la semana
@@ -193,11 +231,18 @@ barberia/
 
 | Archivo | Estado | Nota |
 |---|---|---|
-| `src/components/Productos.jsx` | no importado | `App.jsx` importa `ProductosAdmin`, **no** `Productos`. La landing no muestra la sección de productos. |
-| `src/components/BookingForm.jsx` | no importado | Modal simple de agendar; `BookingPage` lo reemplazó. Sigue insertando en `citas` con un payload **distinto** al actual (§8). |
+| `src/components/BookingForm.jsx` | no importado | Modal simple de agendar; `BookingPage` lo reemplazó. Inserta `{nombre, telefono, servicio, fecha, hora}` **sin `cliente_id`**, así que esa cita no aparece en el portal `/cliente`. Además su `<select>` de servicios es una lista hardcodeada de 4 nombres que ya no coinciden con `servicios.nombre`. |
 | `src/App.css` | no importado | CSS del template de Vite, con nesting. Inerte. |
 | `src/assets/*` | sin uso | `hero.png`, `react.svg`, `vite.svg` |
 | `public/icons.svg` | sin uso | |
+
+⚠ **`src/components/Productos.jsx` salió de esta lista en 2026-10**: el pull
+`853ca9f..8809213` lo conectó a la landing (`App.jsx` lo monta en el índice de `/`)
+y le pasó a leer de Supabase. **No lo borres.** Ya no es código muerto.
+
+⚠ `ServiciosPage.jsx`, `ProductosPage.jsx` y `Contacto.jsx` **no** son código muerto
+aunque parezca raro: son las páginas de `/servicios`, `/productos` y `/contacto`, y
+`Contacto.jsx` vive en `components/` (no en `pages/`).
 
 No los borres ni los "refactorices" por tu cuenta: son trabajo guardable del usuario.
 
@@ -205,28 +250,34 @@ No los borres ni los "refactorices" por tu cuenta: son trabajo guardable del usu
 
 ## 5. Rutas
 
-Definidas todas en `src/App.jsx` (3 bloques de `<Route>`: el layout público, las
-rutas sueltas y el panel):
+Definidas todas en `src/App.jsx` (4 bloques de `<Route>`: rutas sueltas, el layout
+público, el panel y el portal del cliente):
 
 | Ruta | Elemento | Auth | Notas |
 |---|---|---|---|
-| `/login` | `<LoginPage />` | — | **Fuera** del layout público, sin navbar. Tras login OK: `navigate('/admin')` |
-| `/agendar` | `<BookingPage />` | — | **Fuera** del layout público, página completa sin navbar (decisión de diseño) |
-| — | `<LayoutPublico />` = `<Navbar />` + `<ScrollAlInicio />` + `<Outlet />` | — | layout sin `path`; envuelve las 4 rutas de abajo |
-| `/` (índice del layout) | `<Hero /><Services />` | — | |
-| `/servicios` | `<ServicesPage />` | — | la navbar lo marca activo |
-| `/productos` | `<ProductosPage />` | — | la navbar lo marca activo |
-| `/contacto` | `<ContactoPage />` (en `src/components/Contacto.jsx`) | — | la navbar lo marca activo |
-| `/admin` | `<ProtectedRoute><ConfiguracionProvider><AdminDashboard /></…>` | ✅ | layout con `<Outlet/>` |
+| `/login` | `<LoginPage />` | — | **Fuera** de todo layout, sin navbar. Login **y registro** (`signUp`). Tras login: `volverA` → si no, `role === 'admin'` → `/admin`, y si no → `/` |
+| `/agendar` | `<BookingPage />` | confirmar sí | **Fuera** del layout público, pantalla completa sin navbar. Confirmar **exige sesión**: sin ella guarda un borrador en `sessionStorage` y manda a `/login` (§8) |
+| — | `<LayoutPublico />` = `<ScrollAlInicio />` + `<Navbar />` + `<Outlet />` | — | layout sin `path`; envuelve las 4 rutas de abajo. Fondo `bg-neutral-950 min-h-screen` |
+| `/` (índice del layout) | `<Hero /><Servicios /><Productos />` | — | los tres leen de Supabase |
+| `/servicios` | `<ServicesPage />` | — | catálogo con datos de la BD; la navbar lo marca activo |
+| `/productos` | `<ProductosPage />` | — | catálogo con filtro, búsqueda, orden y `stock`; la navbar lo marca activo |
+| `/contacto` | `<ContactoPage />` (en `src/components/Contacto.jsx`) | — | mapa embebido + sedes; la navbar lo marca activo |
+| `/admin` | `<ProtectedRoute roles={['admin','superadmin']}><ConfiguracionProvider><AdminDashboard /></…>` | ✅ | layout con `<Outlet/>` |
 | `/admin` (index) | `<ResumenPage />` | ✅ | |
 | `/admin/servicios` | `<ServiciosAdmin />` | ✅ | |
 | `/admin/productos` | `<ProductosAdmin />` | ✅ | |
 | `/admin/barberos` | `<BarberosAdmin />` | ✅ | |
 | `/admin/citas` | `<CitasAdmin />` | ✅ | |
 | `/admin/configuracion` | `<ConfiguracionAdmin />` | ✅ | |
+| `/cliente` | `<ProtectedRoute roles={['cliente']}><ConfiguracionProvider><ClienteDashboard /></…>` | ✅ | layout con `<Outlet/>`; **no** comparte componente con `AdminDashboard`, es una copia (§9.6) |
+| `/cliente` (index) | `<CitasCliente />` | ✅ | es la única sub-ruta por ahora |
+| `/superadmin` | **no existe** | — | solo reservado en la documentación: el dashboard multi-barbería se hará más adelante. El superadmin entra a `/admin` |
 
 ⚠ El `<Navbar />` de las 4 rutas públicas lo monta **solo** `LayoutPublico`. Si una
 página lo importa por su cuenta aparece duplicado (le pasó a `Contacto.jsx`).
+
+⚠ `/login` y `/agendar` están **deliberadamente** fuera del layout. No los muevas
+dentro: login no lleva navbar y `/agendar` es una pantalla completa.
 
 ⚠ `ServiciosPage`, `ProductosPage` y `ContactoPage` conservan su propio
 `<div className="bg-neutral-950 min-h-screen …">` de raíz. Es redundante con el del
@@ -234,22 +285,60 @@ layout (mismo color) pero produce un `min-h-screen` **anidado**: en páginas cor
 alto total es navbar + 100vh. No se tocó porque el cambio era solo de envoltura; si
 alguna vez sobra scroll, quita ese `min-h-screen` de la raíz de la página.
 
-No hay ruta `*` (404) ni catch-all. No hay redirección de la raíz a otra parte.
+⚠ `App.jsx` no tiene ruta `*` (404) ni catch-all: una URL desconocida queda en blanco.
 
-### `ProtectedRoute` (`src/components/ProtejerRuta.jsx`, 11 líneas)
+No hay redirección de la raíz a otra parte.
+
+### El sistema de roles (3 roles)
+
+| Rol | Dónde entra | Qué puede hacer |
+|---|---|---|
+| `superadmin` | `/admin` (de momento) | Dueño del software. **Solo hay 1** y hoy es la misma cuenta que el admin del negocio (`23302011@utfv.edu.mx`). Su dashboard multi-barbería **no existe** todavía |
+| `admin` | `/admin` | Dueño de la barbería: todo lo del panel. **Hoy 0 cuentas** con este rol |
+| `cliente` | `/cliente` | Se registra en `/login`, y ve, cancela y reagenda **sus** citas |
+
+El rol vive en la tabla **`perfiles`** (§10.2), **nunca** en `auth.users.user_metadata`:
+ese campo lo escribe el propio cliente al registrarse, así que era auto-asignable.
+Desde el 2026-10-12 **ningún archivo lee `user_metadata.role`** (verificado: 0
+coincidencias).
+
+`src/utils/rutaInicioPorRol.js` es el **helper único** que decide a dónde va cada rol.
+Los tres que lo necesitan lo usan y **no deciden por su cuenta**:
+
+```js
+export function rutaInicioPorRol(rol) {
+  return rol === 'cliente' ? '/cliente' : '/admin'
+}
+```
+
+`superadmin` y `admin` caen en `/admin`; `cliente` en `/cliente`; y **cualquier valor
+desconocido o `null` cae en `/cliente`**, el de menor privilegio (fail-safe). Si añades
+un cuarto rol, actualiza aquí **y** las listas `roles` de `App.jsx`.
+
+### `ProtectedRoute` (`src/components/ProtejerRuta.jsx`)
 
 ```jsx
-const { session, cargando } = useAuth()
-if (cargando) return <p className="text-white p-8">Cargando...</p>
+const { session, cargando, rol, cargandoRol } = useAuth()
+if (cargando || (session && cargandoRol)) return <p className="text-white p-8">Cargando...</p>
 if (!session) return <Navigate to="/login" replace />
+if (roles && !roles.includes(rol)) return <Navigate to={rutaInicioPorRol(rol)} replace />
 return children
 ```
 
+- Recibe `roles`: lista de roles admitidos. `/admin` → `['admin','superadmin']`,
+  `/cliente` → `['cliente']`. Si `roles` no viene, acepta cualquier cuenta.
+- Espera **dos** cosas: que la sesión esté resuelta (`cargando`) y que el rol esté
+  leído (`cargandoRol`). Sin el segundo chequeo, un cliente que recarga en `/admin`
+  vería un instante el panel antes de ser expulsado.
+- Sin sesión → `/login`. Con sesión y rol incorrecto → **a su propio inicio**
+  (`rutaInicioPorRol`), no a `/login`: así un admin que teclea `/cliente` aterriza en
+  `/admin` sin pasar por el login.
 - El **nombre del archivo tiene un typo** (`ProtejerRuta.jsx`, no `ProtectedRoute.jsx`).
   Se importa como `import ProtectedRoute from './components/ProtejerRuta'`. **No lo
   renombres** sin actualizar el import en `App.jsx`.
-- **No hay verificación de rol ni whitelist de usuarios.** Cualquier cuenta
-  autenticada en Supabase entra al panel completo. Si añades roles, hazlo aquí.
+- ⚠ El guard **no es la única defensa**: la autorización real está en RLS (§10.5).
+  Que el guard expulse a un cliente del panel es cortesía de UX; que no pueda escribir
+  en el catálogo es la base de datos. No aflojes la una creyendo la otra.
 
 ---
 
@@ -267,27 +356,75 @@ export const supabase = createClient(supabaseUrl, supabaseKey)
 Singleton exportado. **Único punto de contacto con Supabase.** Nota: este es el único
 archivo del proyecto que usa comillas dobles y punto y coma (heredado del template).
 
-### 6.2 `src/context/AuthContext.jsx` (38 líneas, íntegro)
+### 6.2 `src/context/AuthContext.jsx` (69 líneas, íntegro)
 
-Expone `{ session, cargando, login, logout }` y un hook `useAuth()`.
+Expone `{ session, cargando, login, logout, rol, cargandoRol }` y un hook `useAuth()`.
 
 - Al montar: `supabase.auth.getSession()` → setea `session` y `cargando = false`.
 - Se suscribe con `supabase.auth.onAuthStateChange(...)` y limpia con
   `listener.subscription.unsubscribe()` en el cleanup del `useEffect`.
-- `login(email, password)` → `supabase.auth.signInWithPassword` (devuelve el
-  `{ error }` de supabase, **no** lanza).
+- `login(email, password)` → `supabase.auth.signInWithPassword` (devuelve la respuesta
+  completa de Supabase, **no** lanza).
 - `logout()` → `supabase.auth.signOut()`.
+- **`rol`** y **`cargandoRol`** salen de un **segundo `useEffect`** con dependencia
+  `[session?.user?.id]`:
+
+```js
+const userId = session?.user?.id
+const consulta = userId
+  ? supabase.from('perfiles').select('rol').eq('id', userId).maybeSingle()
+  : Promise.resolve({ data: null, error: null })
+
+consulta.then(({ data, error }) => {
+  if (!vigente) return
+  if (error) console.error(error)
+  setRol(userId ? data?.rol ?? 'cliente' : null)
+  setCargandoRol(false)
+})
+```
+
+Reglas que cumple ese bloque, no las rompas:
+- **El rol se lee de `perfiles`, no de `user_metadata`.** `user_metadata` lo escribe el
+  cliente al registrarse, así que era auto-asignable (§18.39).
+- **`null` = no hay sesión**, no "rol desconocido". Sin sesión, `rol` es `null`.
+- **Si la lectura falla o no hay fila → `'cliente'`**: es el default de la BD y el de
+  menor privilegio.
+- La consulta se resuelve siempre por `.then()` (nunca `setState` síncrono en el
+  cuerpo del efecto: dispara `react-hooks/set-state-in-effect`). El caso "sin sesión"
+  se resuelve con `Promise.resolve()` para que **no haya dos caminos de setState**.
+- Se relee en cada cambio de usuario (login, logout, cambio de cuenta), no una sola vez.
 
 `AuthProvider` está montado en `main.jsx`, **fuera** de `App`. Moverlo dentro de `App`
 o de `BrowserRouter` rompe el guard de rutas.
 
-### 6.3 `src/pages/LoginPage.jsx` (55 líneas)
+⚠ Sigue teniendo **1 error de lint** (`react-refresh/only-export-components`, línea 69):
+el archivo exporta `AuthProvider` y `useAuth`. No lo "arregles" de paso; si hay que
+partirlo, el contexto de configuración ya sirve de patrón (§9.1).
 
-Formulario controlado de email + password. `handleSubmit` previene el default, pone
-`cargando`, llama a `login`, y si hay `error` muestra el texto fijo
-**"Correo o contraseña incorrectos."** (no distingue el error real); si no,
-`navigate('/admin')`. El botón se deshabilita con `disabled:opacity-50` y el texto pasa
-a `'Entrando...'`.
+### 6.3 `src/pages/LoginPage.jsx` (121 líneas)
+
+Formulario controlado de email + password **con modo registro**. `handleSubmit`
+previene el default, pone `cargando` y bifurca según `esRegistro`:
+
+- **Registro** (`esRegistro === true`): `supabase.auth.signUp({ email, password,
+  options: { data: { full_name: nombre, role: 'cliente' } } })`. ⚠ El `role` lo elige
+  **el propio cliente** y no se valida en el servidor: cualquiera que se registre
+  puede pedir `admin` (§18.39). Si el registro va bien muestra
+  `"¡Cuenta creada con éxito! Ya puedes iniciar sesión."` y **vuelve al modo login**
+  (no entra solo). Si falla, muestra `registerError.message` **crudo**.
+- **Login**: `const { data, error } = await login(email, password)`. Si hay `error`
+  muestra el texto fijo **"Correo o contraseña incorrectos."**; si no, decide el
+  destino en este orden:
+  1. `location.state?.volverA` → navega ahí (lo usa `/agendar` al pedir sesión, §8);
+  2. `role === 'admin'` → `/admin`;
+  3. si no → `/`.
+
+El texto del botón de login es `'Procesando...'` mientras `cargando`, y el de
+registro `'Registrarme'`. El botón de abajo alterna entre "Regístrate aquí" y
+"¿Ya tienes cuenta? Inicia sesión" y limpia `error`/`mensaje`.
+
+Cuando viene de `/agendar` con `volverA` seteado, muestra arriba un aviso ámbar:
+*"Inicia sesión o crea tu cuenta para confirmar tu cita. Tu selección está guardada."*
 
 ### 6.4 `src/components/` — sitio público
 
@@ -297,16 +434,36 @@ a `'Entrando...'`.
   derecha con `hidden md:flex`). **En `<md` hay hamburguesa**: estado `menuAbierto`,
   panel desplegable con los 4 links, el teléfono `+00 00000000` (`href="tel:..."`), la
   sesión y `AGENDAR CITA`. La constante de módulo `enlaces` es la fuente única de los
-  links y la usan tanto la fila de `md+` como el panel.
-- **`Hero.jsx`** — dos columnas (`md:grid-cols-2`): texto con `navigate('/agendar')` en
-  el CTA, y `/barber.jpg` en un contenedor `relative rounded-2xl overflow-hidden` con
-  marca de agua y barra inferior (`absolute ... bg-black/70 backdrop-blur-sm`).
-- **`Servicios.jsx`** — array `servicios` hardcodeado de 4 objetos
-  (`numero, categoria, badge, titulo, descripcion, duracion, tarifa, destacado`),
-  grid `md:grid-cols-4`. Al hacer click navega a
-  `` `/agendar?servicio=${encodeURIComponent(s.titulo)}` `` — **pero ese query param
-  no lo lee nadie** (ver §8, trampa 3). Link inferior `VER TODOS LOS SERVICIOS →`
-  también es `href="#"`.
+  links y la usan tanto la fila de `md+` como el panel; cada uno es un `NavLink`
+  (`fin: true` solo en "Inicio"), así que **el link de la ruta actual se marca activo**
+  y `react-router` pone `aria-current="page"`.
+  El botón de cuenta (`handleAuthClick`) manda a `/login` sin sesión, a `/admin` si
+  `role === 'admin'` y a **`/cliente`** en cualquier otro caso.
+- **`Hero.jsx`** — dos columnas (`md:grid-cols-2`): a la izquierda el texto con dos
+  CTA (`navigate('/agendar')` y `irAServicios`, que hace
+  `document.getElementById('servicios')?.scrollIntoView({ behavior: 'smooth' })` — el
+  destino es el `id="servicios"` de `<Servicios />`), y debajo un botón de cuenta que
+  sigue la misma regla de rol que el `Navbar` (`/login` · `/admin` · `/cliente`),
+  mostrando "Hola, {userName}. Ir a mi panel" si hay sesión. A la derecha,
+  `/barber.jpg` en un contenedor `relative rounded-2xl overflow-hidden` con marca de
+  agua y barra inferior (`absolute ... bg-black/70 backdrop-blur-sm`).
+- **`Servicios.jsx`** — **desde Supabase** (`select('*').order('created_at', ascending: true)`),
+  **no** hardcodeado: `cargando` / `error` (con botón "Reintentar" que vuelve a llamar
+  `cargarServicios`) / vacío / grid `sm:grid-cols-2 lg:grid-cols-4`. Cada tarjeta es un
+  `<button>` que navega a `` `/agendar?servicio=${encodeURIComponent(s.nombre)}` `` —
+  **pero ese query param no lo lee nadie** (§18.3). Raíz `<section id="servicios" className="scroll-mt-4">`
+  para que el CTA del Hero pueda hacer scroll. Link inferior **"VER TODOS LOS
+  SERVICIOS →"** → `/servicios` (ruta real, no `href="#"`).
+- **`Productos.jsx`** — gemelo de `Servicios.jsx` para productos (`id="productos"`,
+  `created_at` ascendente, mismos 4 estados, grid `sm:grid-cols-2 lg:grid-cols-4`).
+  Muestra `formatoPrecio()` (`$1,234 MXN`), la categoría y el texto **"SOLO EN
+  TIENDA"** en vez de un botón de compra: no hay checkout. Link inferior → `/productos`.
+- **`Contacto.jsx`** — **no es un componente suelto**: es la página completa de
+  `/contacto` y exporta `ContactoPage`. Contiene dos `<iframe>` de Google Maps con
+  filtro CSS en línea, sedes, garantías y CTAs a `/agendar`. ⚠ Los datos de las sedes
+  son placeholders vacíos (nombre, dirección, horarios, teléfono, `mapQuery` en
+  blanco), así que los mapas apuntan a una búsqueda de cadena vacía.
+- **`BookingForm.jsx`** — código muerto, ver §4.
 
 ### 6.5 `src/pages/BookingPage.jsx` — ver §8 completo
 
@@ -360,87 +517,148 @@ Observadas de forma consistente en el código existente:
 
 ## 8. Flujo de citas (wizard de `BookingPage.jsx`)
 
-`/agendar` → `BookingPage`. Un solo componente de 362 líneas con un wizard de 3 pasos
-controlado por `pasoActual` (`1 | 2 | 3`) y un sidebar de resumen pegajoso.
+`/agendar` → `BookingPage`. Un solo componente de **985 líneas** (el más grande del
+repo) con un wizard de 3 pasos controlado por `pasoActual` (`1 | 2 | 3`), un sidebar
+de resumen pegajoso y un modal de confirmación final.
 
-### Constantes de módulo (hardcodeadas, líneas 6–34)
+### Constantes de módulo
 
 ```js
-const PASOS = ['Servicio', 'Fecha & Hora', 'Tus Datos']
-const servicios = [ { nombre: 'Corte', descripcion: '...', precio: 680 },
-                    { nombre: 'Definicion de Barba', descripcion: '...', precio: 540 } ]
-const dias = [ {label:'LUN',numero:21,disponible:true}, ... 22,23,24,25,26,
-               {label:'DOM',numero:27,disponible:false} ]        // 7 días
-const bloques = [ { titulo: 'Mañana (10:00 – 13:00)', horas: [...] },
-                  { titulo: 'Tarde (...)', horas: [...] },
-                  { titulo: 'Noche (18:30 – 20:00)', horas: ['18:30 PM'] } ]
+const PASOS = ['Servicio', 'Fecha & Hora', 'Tus Datos']   // el stepper de arriba
+const BLOQUES = [ { titulo: 'Mañana (10:00 – 13:00)', horas: ['10:00','11:00','11:50','12:40'] },
+                  { titulo: 'Tarde (14:00 – 18:00)',  horas: ['14:30','15:20','16:00','17:30'] },
+                  { titulo: 'Noche (18:30 – 20:00)', horas: ['18:30'] } ]
+const ETIQUETAS_DIA = ['LUN','MAR','MIÉ','JUE','VIE','SÁB','DOM']
 ```
 
-**El wizard NO consulta Supabase para los servicios, ni los días, ni las horas.**
-Todo sale de estas constantes. La tabla `servicios` de Supabase no se usa aquí.
+`BLOQUES` es la única fuente de horarios y **sigue hardcodeado**: no hay modelo de
+slots (§18.6). Las horas están en **24 h** porque `citas.hora` es
+`time without time zone` (§10.5); el AM/PM es solo `formato12h()` para mostrar.
+
+Los **días ya no son fijos**: `dias` es un `useMemo` que genera los 7 días de la
+semana a partir de `semanaBase` (con `lunesDe()`), marca `pasado`, `esHoy` y `cerrado`
+(domingo) y el encabezado `etiquetaMes` se calcula con `toLocaleDateString('es-MX')`
+tomando el **día 3** de la semana (para no etiquetar mal los meses a caballo). Se navega
+semana a semana con `moverSemana(±1)`, y no se puede ir a una semana anterior a la
+actual (`lunesActual`).
 
 ### Estado del componente
 
 ```js
-fechaElegida, horaElegida, pasoActual, servicioElegido, addon,
-form = { nombre:'', telefono:'', correo:'', notas:'' }, estadoEnvio
-const total = (servicioElegido?.precio || 0) + (addon ? 250 : 0)
+serviciosElegidos, productosElegidos, barberoElegido,   // selección múltiple
+fechaElegida ('YYYY-MM-DD'), horaElegida ('HH:MM' 24 h), pasoActual, semanaBase,
+form = { nombre, telefono, correo, notas },
+mostrarResumen,                       // modal de confirmación final
+horasOcupadas, estadoEnvio, borrador  // 'idle' | 'enviando' | 'error' | 'slot' | 'exito'
+const total = totalServicios + totalProductos
 ```
+
+### Lecturas desde Supabase (3 efectos al montar)
+
+| Qué | Consulta |
+|---|---|
+| Servicios | `from('servicios').select('nombre, categoria, descripcion, costo, duracion, imagen').order('nombre')` |
+| Productos | `from('productos').select('id, nombre, categoria, descripcion, precio, imagen').order('created_at', {ascending:false})` |
+| Barberos | `from('barberos').select('id, nombre, especialidad, imagen').eq('disponible', true)` |
+| Horas ocupadas | RPC `horas_ocupadas({ fecha_consulta, barbero_id })`, en un efecto que depende de `[fechaElegida, barberoIdElegido]` |
+
+Cada efecto usa el patrón `let vigente = true` + `.then(({data, error}) => { if (!vigente)
+return … })` para no setear estado tras desmontar.
 
 ### Paso a paso
 
-1. **Paso 1 — Servicio.** Grid `sm:grid-cols-2` de tarjetas-botón. Seleccionar fija
-   `servicioElegido`; el botón "Siguiente →" está `disabled={!servicioElegido}`.
-2. **Paso 2 — Fecha & Hora.** Grid `grid-cols-7` de días (los no disponibles con
-   `disabled={!d.disponible}` y `disabled:opacity-30`), y los bloques de hora como
-   chips `flex flex-wrap gap-3`. Botones "← Atrás" (a paso 1) y "Siguiente →"
-   `disabled={!fechaElegida || !horaElegida}`.
-3. **Paso 3 — Tus Datos.** Formulario en `grid sm:grid-cols-2`: nombre*,
-   teléfono (WhatsApp)*, correo* (`sm:col-span-2`), notas (`textarea`, opcional).
-   Solo tiene "← Atrás".
+1. **Paso 1 — "01. ELECCIÓN DE SERVICIO" + "02. BARBERO" + productos.** Multi-select de
+   servicios (`alternarServicio` por `nombre`), tarjetas de barbero con "Cualquier
+   barbero" como opción por defecto (`elegirBarbero`), y la sección de productos
+   **opcional** que solo se renderiza si `productos.length > 0`. "Siguiente →" se
+   habilita con ≥1 servicio.
+2. **Paso 2 — "03. SELECCIÓN DE FECHA & TURNO".** Grid `grid-cols-7` de días
+   (`disabled` si `pasado || cerrado`) y los chips de `BLOQUES`; una hora ya ocupada o
+   ya pasada queda `disabled` con `title="Horario no disponible"`.
+3. **Paso 3 — "04. TITULAR DE LA CITA".** Formulario en `grid sm:grid-cols-2`: nombre*,
+   teléfono*, correo* y notas (opcional). Solo tiene "← Atrás".
 
-El **stepper** superior (círculos + líneas `w-8 h-px`) se genera con `PASOS.map()`,
-completado = `numero < pasoActual`.
+⚠ La numeración visible ("01", "02", "03", "04") **no** coincide con los 3 pasos del
+stepper: el bloque de barberos comparte pantalla con el paso 1 pero está rotulado
+"02". Es cosmético, no funcional (§18.40).
 
-### Envío — `handleConfirmar()` (líneas 53–74)
+### Sesión obligatoria + borrador
+
+**Explorar y elegir es libre; confirmar exige sesión.** `requiereLogin()` es el punto
+único que lo aplica:
 
 ```js
-setEstadoEnvio('enviando')
-const { error } = await supabase.from('citas').insert([{
-  nombre, telefono, correo, notas,
-  servicio: servicioElegido.nombre,          // TEXTO, no FK
-  fecha: `2026-09-${fechaElegida.numero}`,   // ← mes/año fijos
-  hora: horaElegida, addon, total,
-}])
-if (error) { console.error(error); setEstadoEnvio('error') }
-else        { setEstadoEnvio('exito') }
+const requiereLogin = () => {
+  if (cargandoSesion) return true                 // aún no sabemos: solo espera
+  if (session) return false
+  guardarBorrador({ … })                          // sessionStorage
+  navigate('/login', { state: { volverA: '/agendar' } })
+  return true
+}
 ```
 
-- El botón "CONFIRMAR RESERVACIÓN →" vive en el **sidebar de resumen**, no en el paso 3,
-  y se habilita solo si hay servicio + fecha + hora + nombre + telefono + correo.
-- `estadoEnvio === 'exito'` hace **early return** de una pantalla de confirmación con
+- El borrador (`sessionStorage`, clave `borradorReserva`) guarda servicios, productos,
+  barbero, fecha, hora, paso, formulario y `semanaBase`, con
+  `VIGENCIA_BORRADOR_MS = 2h`. `leerBorrador()` se corre **una sola vez** al montar
+  (`useState(leerBorrador)`) y **descarta fecha y hora si el día ya pasó**.
+- `borrarBorrador()` se llama solo cuando el insert sale bien.
+- El botón del sidebar cambia de texto: con sesión "CONFIRMAR RESERVACIÓN →", sin
+  sesión "INICIAR SESIÓN PARA RESERVAR →" (+ la nota "Guardamos lo que elegiste: al
+  iniciar sesión regresas aquí para confirmar.").
+- `LoginPage` lee `location.state.volverA` y vuelve a `/agendar` (§6.3).
+- ⚠ Los tres efectos leen `session` pero **solo para el gate**: el listado de servicios,
+  productos, barberos y horas ocupadas es público (`anon`), no depende de la sesión.
+
+### Envío — `handleConfirmar()`
+
+```js
+if (requiereLogin()) return                       // seguro extra: el modal abierto no inserta sin sesión
+setEstadoEnvio('enviando')
+let barberoId = barberoIdElegido
+if (!barberoId) {                                 // "Cualquier barbero" → auto-asignación
+  const { data } = await supabase.rpc('asignar_barbero', { fecha_consulta, hora_consulta })
+  barberoId = data || null
+}
+const { error } = await supabase.from('citas').insert([{
+  nombre, telefono, correo, notas,
+  servicio: serviciosElegidos.map(s => s.nombre).join(', '),   // texto, no FK
+  productos: productosElegidos.map(p => ({ nombre: p.nombre, precio: Number(p.precio) || 0 })),
+  fecha: fechaElegida, hora: horaElegida,        // 'YYYY-MM-DD' local, 'HH:MM' 24 h
+  total,                                          // servicios + productos
+  barbero_id: barberoId,
+  cliente_id: session.user.id,                   // ← nuevo en 2026-10
+}])
+```
+
+- El botón del sidebar **no inserta**: solo abre el modal de confirmación. El insert
+  ocurre en "Confirmar reservación" dentro de ese modal; el otro botón ("Agregar otro
+  servicio o producto") lo cierra y vuelve al paso 1 conservando la selección.
+- `estadoEnvio === 'exito'` hace **early return** de la pantalla de confirmación con
   `<Link to="/">Volver al inicio</Link>`.
-- `estadoEnvio === 'error'` muestra "Algo salió mal, intenta de nuevo." bajo el botón.
-- La UI declara "No se cobra nada en línea. Pago directo en sucursal." y "Te
-  contactaremos por WhatsApp" — no hay pasarela de pago ni envío real de WhatsApp.
+- `error.code === '23505'` (índice `citas_slot_unico`): limpia la hora, recarga las
+  horas ocupadas, **cierra el modal y vuelve al paso 2** (la hora ya no es válida).
+- ⚠ `cliente_id` **no tiene FK ni `NOT NULL`**: las citas antiguas siguen en `null` y
+  el portal `/cliente` no las muestra (§18.41).
 
 ### Trampas verificadas en este flujo (no las "arregles" sin avisar)
 
-1. **La fecha está fijada a septiembre de 2026.** Línea 62, con el comentario del propio
-   autor: `// ajusta el formato/mes según tu calendario real`. `dias` son 21–27 fijos y
-   el encabezado dice "Septiembre 2026". Cambiar el calendario es una feature, no un fix.
-2. **`setAddon` se declara pero nunca se llama.** `addon` es siempre `false`; no existe
-   UI para activarlo, aunque `total` suma `250` si lo estuviera y `CitasAdmin` muestra
-   "Con add-on de vapor ozono" cuando `cita.addon` es true. Está a medio implementar.
-3. **`Servicios.jsx` pasa `?servicio=` y `BookingPage` no lo lee.** No hay
-   `useSearchParams` en el archivo. El query param se ignora y el paso 1 arranca sin
-   preseleccionar nada.
-4. **Campos renderizados que no existen:** líneas 157 y 169 imprimen `s.etiqueta` y
-   `s.duracion`, pero los objetos de `servicios` solo tienen
-   `{ nombre, descripcion, precio }` → ambos salen vacíos.
+1. **`Servicios.jsx` pasa `?servicio=` y `BookingPage` no lo lee.** No hay
+   `useSearchParams` en el archivo (verificado: 0 coincidencias). El query param se
+   ignora y el paso 1 arranca sin preseleccionar nada. §18.3.
+2. **`BLOQUES` está hardcodeado.** No hay tabla de horarios ni slots: cambiar la
+   agenda del salón exige editar la constante. `CitasCliente` **duplica** el mismo
+   arreglo para el modal de reagendar (§18.42).
+3. **Una cita con varios servicios ocupa un solo horario.** `citas_slot_unico` es
+   `(fecha, hora, barbero_id)`: marcar "Corte + Barba" a las 11:00 no bloquea las
+   12:10. La duración acumulada solo se usa para *mostrar* y para `estaEnCurso` del
+   admin. §18.6.
+4. **Domingo cerrado** está duplicado: `dias` usa `date.getDay() === 0` en `BookingPage`
+   y `CitasCliente` recalcula `esDomingo` con `new Date(fecha + 'T00:00:00').getDay()`.
+   No hay tabla de días cerrados, así que cambiar el horario del salón hay que
+   hacerlo en dos archivos.
 5. El payload de `citas` que inserta el `BookingForm.jsx` muerto es **distinto**
-   (`{nombre, telefono, servicio, fecha, hora}`, sin `correo`/`notas`/`addon`/`total`).
-   Si resucitas ese componente, actualiza su payload primero.
+   (`{nombre, telefono, servicio, fecha, hora}`, sin `correo`/`productos`/`total`/
+   `cliente_id`). Si resucitas ese componente, actualiza su payload primero.
 
 ---
 
@@ -726,13 +944,23 @@ resolviendo el servicio contra el catálogo, no leyendo el sillón del barbero.
   pendiente ámbar, confirmada azul, completada verde, cancelada rojo.
 - **`cargarDatos` carga las 3 tablas completas** (`citas`, `barberos`, `servicios`) con un
   `Promise.all` y filtra todo en el cliente. `citas` son pocas filas; no paginar la query.
+- ⚠ `cargarDatos` usa `select('*')`, así que **`cliente_id` sí llega al panel**, pero
+  **no se usa en ninguna columna**: la celda "Cliente" muestra solo `nombre` +
+  `telefono`. Con el portal `/cliente` ya existe la relación, así que mostrar a quién
+  pertenece cada cita es el siguiente paso natural (§18.43).
 - **`estaEnCurso(cita)`** no lee un estado: lo deriva comparando la hora actual contra
-  `hora + duración` del servicio, solo para citas `confirmada`. Si algún día se agrega el
-  literal `en_curso`, también lo acepta.
+  `hora + duración` del servicio, solo para citas `confirmada`. Usa
+  `duracionTotalCita()`, que **suma la duración de todos** los servicios del texto. Si
+  algún día se agrega el literal `en_curso`, también lo acepta.
+- **`partirServicios(texto)`** parte `citas.servicio` por `,` porque el flujo público
+  permite selección múltiple (§8). Con más de un nombre la celda los muestra en lista;
+  con uno solo, en texto plano.
 - **`buscarServicio(nombre, servicios)`** resuelve la duración con 3 escalones: nombre
   exacto → categoría exacta → categoría contenida en el texto. Hace falta porque
   `citas.servicio` es texto libre y casi nunca coincide con `servicios.nombre` (las citas
   dicen "Corte", el catálogo dice "Corte de Cabello").
+- **`productosCita(cita)`** lee el `jsonb` `productos` con `try/catch` (por si alguien lo
+  insertó como texto) y lista `+ Nombre · $X MXN` bajo el servicio cuando hay elementos.
 - **"Primera visita"** = ninguna otra cita del mismo `telefono` con fecha anterior (o el
   mismo día a una hora anterior).
 - **"Cobrar" escribe `estado: 'completada'`**, no un pago: la tabla no tiene columnas de
@@ -751,11 +979,78 @@ Marcado con `PENDIENTE` en el código, no lo tomes por implementado:
 - **Vista Calendario**: la pestaña del toggle es navegable y muestra un placeholder con
   las 3 piezas que faltan (franjas por hora, bloqueos, aviso de solapamiento). No hay
   modelo de horarios.
-- **Recordatorios SMS/WhatsApp**: tarjeta estática, botones **deshabilitados** a propósito
-  (no fingen mandar nada). Falta proveedor + Edge Function + regla de disparo.
+- **Recordatorios WhatsApp**: tarjeta estática, botones **deshabilitados** a propósito
+  (no fingen mandar nada). El título de la tarjeta pasó de "Recordatorios SMS /
+  WhatsApp" a **"Recordatorios via WhatsApp"** (único cambio de texto del pull
+  `853ca9f..8809213`); el **comentario** de sección sobre el bloque sigue diciendo
+  "5.2 Recordatorios SMS / WhatsApp", así que no está sincronizado. Falta proveedor +
+  Edge Function + regla de disparo.
 - **Cobrar**: ver arriba.
 - **Tag "Club Noble" (VIP)**: omitido a propósito, no hay ningún criterio real en el
   modelo que lo sostenga. No lo inventes sin hablarlo.
+
+### 9.6 Portal del cliente (`/cliente`)
+
+`ClienteDashboard.jsx` (199 líneas) es **una copia recortada** del shell de
+`AdminDashboard.jsx`, no un componente compartido. Comparación verificada:
+
+| | `AdminDashboard` | `ClienteDashboard` |
+|---|---|---|
+| Raíz | `flex min-h-screen flex-col bg-slate-50 lg:flex-row` | idéntica |
+| Menú móvil | `aria-controls="menu-movil-admin"` | `aria-controls="menu-movil-cliente"` |
+| Links | 6 | **1** ("Mis citas", `fin: true`) |
+| Cabecera del rail | "ADMIN SUITE" + "Nombre Barbería" | **"Portal del cliente"** |
+| Topbar | buscador decorativo + "Ver sitio web público" + notificaciones | **solo** "Hola, {nombre}" + "Ver sitio web" (`sm:inline-flex`) |
+| Tarjeta de perfil | muestra estado "En línea" y `v1.0` | solo nombre y correo |
+
+- El rail y la barra móvil salen de `useConfiguracion()`, igual que el admin, así que
+  el logo y el nombre de la barbería se leen de la tabla `configuracion`.
+- ⚠ **No tiene búsqueda, ni "Nueva cita" en el rail** (sí hay un botón "+ Nueva cita"
+  dentro de `CitasCliente`), ni sección de perfil editable.
+- ⚠ Las dos tarjetas de perfil (rail y panel móvil) son **el mismo JSX** en una variable
+  (`tarjetaPerfil`), a diferencia del admin que lo repite. Buen patrón, no lo
+  deshagas.
+- ⚠ El guard es el mismo `ProtectedRoute`: **un admin autenticado también entra a
+  `/cliente`** y ve un listado vacío (RLS filtra por `cliente_id = auth.uid()`, §10.5).
+
+### 9.7 `CitasCliente.jsx` — "Mis citas" (352 líneas)
+
+Única página de `/cliente`. Tabs **"Próximas (N)" / "Historial (N)"** con `role="tablist"`
++ `aria-selected`, y tarjetas por cita (fecha, hora, estado, servicios, barbero, total,
+productos).
+
+- `cargarCitas()` va en un **`useCallback`** con dependencia `[userId]` y el efecto llama
+  esa referencia, con `// eslint-disable-next-line react-hooks/set-state-in-effect`:
+  es el patrón correcto para evitar el error de lint (§15.1).
+- El filtro Próximas/Historial usa `useMemo` con `activa(c)`:
+  `estado ∈ {pendiente, confirmada}` **y** `aDate(fecha, hora) >= new Date()`. El historial
+  es lo complementario, en `.reverse()`.
+- **Reagendar**: modal con `<input type="date" min={hoy}>`, los `BLOQUES` de hora (copia
+  local, §18.42), y la RPC `horas_ocupadas({ fecha_consulta, barbero_id })`. Valida
+  domingo (`esDomingo`) y horas pasadas. Llama a `reagendar_cita(p_id, p_fecha, p_hora)`
+  y traduce el `23505` igual que `BookingPage`.
+- **Cancelar**: modal de confirmación con la fecha/hora de la cita y
+  `cancelar_cita(p_id)`.
+- ⚠ **No usa `useConfirmarCita`** (§9.8): el cliente no confirma citas, las cancela o
+  reagenda, y ambas cosas pasan por RPC.
+- Los errores usan `role="alert"` (`errorCarga` y el `error` de los modales).
+- ⚠ `estilosEstado` pinta `confirmada` en **verde** (`bg-green-100 text-green-800`),
+  mientras el admin la pinta en **azul** (§11.1). Mismo estado, dos colores.
+
+### 9.8 `src/hooks/useConfirmarCita.js` — confirmar con optimistic update
+
+Único hook en `src/hooks/`. Firma: `useConfirmarCita(setCitas, setErrorMsg)` → devuelve
+`async (cita) => {}`.
+
+- Es un **optimistic update con reversión**: cambia el estado local a `'confirmada'`
+  al instante, y si Supabase devuelve `error` **revierte** al valor anterior y pasa
+  `setErrorMsg(\`No se pudo confirmar la cita: ${error.message}\`)`.
+- Es no-op si la cita ya estaba `'confirmada'`.
+- Cada página conserva la propiedad de su propio listado y lo vuelve a consultar al
+  montar, por eso el hook **no guarda datos**: recibe el setter. Lo consumen
+  `ResumenPage` (con `setCitasSemana`) y `CitasAdmin` (con `setCitas`).
+- ⚠ Si añades una tercera pantalla que confirme citas, usa el hook; si no, duplicarás
+  la lógica de reversión.
 
 ---
 
@@ -779,27 +1074,43 @@ a un gist.** Si necesitas el valor, pregunta.
 
 ### 10.2 Tablas
 
-**No hay carpeta `supabase/` en el repo ni SQL versionado en archivos**, pero SÍ hay
-migraciones aplicadas desde el MCP de Supabase (§10.5). El esquema solo se puede inferir
-del uso en el código. Lo que se ve en las consultas:
+**No hay carpeta `supabase/` en el repo ni SQL versionado en archivos.** Esquema
+verificado por MCP (2026-10), columna por columna:
 
-| Tabla | Columnas usadas | Evidencia |
+| Tabla | Columnas reales | Notas |
 |---|---|---|
-| `citas` | `id`, `nombre`, `telefono`, `correo`, `notas`, `servicio`, `fecha`, `hora`, `addon`, `total`, `estado`, `barbero_id`, `created_at` | `BookingPage` inserta todos salvo `id`/`estado`/`barbero_id`; `CitasAdmin` lee `estado`, `addon`, `total`, `notas`, `correo`, `barbero_id`; `CitaManualForm` escribe `barbero_id` |
-| `servicios` | `id`, `nombre`, `categoria`, `descripcion`, `costo`, `duracion`, `imagen`, `created_at` | `ServicioForm` escribe `{nombre, categoria, descripcion, costo:Number, imagen}`; los tres ordenan por `created_at` |
-| `productos` | `id`, `nombre`, `categoria`, `descripcion`, `precio`, `imagen`, `created_at` | `ProductoForm` escribe `{nombre, categoria, descripcion, precio:Number, imagen}` |
-| `barberos` | `id`, `nombre`, `especialidad`, `disponible`, `imagen`, `created_at` | `BarberoForm` escribe `{nombre, especialidad, disponible, imagen}`; `ResumenPage` filtra `.eq('disponible', true)` |
+| `citas` | `id uuid PK`, `nombre text NOT NULL`, `telefono text NOT NULL`, `servicio text NOT NULL`, `fecha date NOT NULL`, `hora time NOT NULL`, `estado text NULL DEFAULT 'pendiente'`, `created_at timestamp NULL DEFAULT now()`, `correo text`, `notas text`, `addon boolean NULL DEFAULT false`, `total numeric`, `barbero_id uuid`, `productos jsonb NOT NULL DEFAULT '[]'`, `cliente_id uuid` | la **única FK** es `citas_barbero_id_fkey` → `barberos(id)` con **`ON DELETE SET NULL`**. `cliente_id` **no tiene FK ni trigger**: apunta a `auth.users` por convención |
+| `servicios` | `id`, `nombre`, `categoria`, `descripcion`, `costo numeric`, `duracion text`, `imagen`, `created_at` | `duracion` es TEXT sin CHECK |
+| `productos` | `id`, `nombre`, `descripcion`, `categoria NOT NULL`, `precio numeric NOT NULL`, `imagen`, `created_at`, **`stock integer`** | `stock` solo lo lee `ProductosPage`; ni el admin ni `BookingPage` lo tocan |
+| `barberos` | `id`, `nombre`, `especialidad`, `disponible boolean NULL DEFAULT true`, `imagen`, `created_at`, **`rating numeric DEFAULT 0`**, **`total_resenas integer DEFAULT 0`**, `sillon_numero integer`, `sillon_nombre text` | `rating`/`total_resenas` los usa `BarberosAdmin`; `sillon_*` no los usa nadie (§18.25) |
+| `configuracion` | `id integer PK`, `nombre text NOT NULL`, `estado text`, `municipio text`, `logo text`, `descripcion text`, `updated_at timestamptz` | **una sola fila** (`id = 1`), verificada: hay 1. La usan `AdminDashboard`, `ClienteDashboard`, `ConfiguracionAdmin` y el provider |
+| **`perfiles`** | `id uuid PK → auth.users(id) ON DELETE CASCADE`, `rol text NOT NULL DEFAULT 'cliente'` con **`check (rol in ('superadmin','admin','cliente'))`**, `nombre text`, `created_at timestamptz NOT NULL DEFAULT now()` | **Fuente de verdad del rol.** La app solo hace SELECT; el INSERT lo hace el trigger `trg_crear_perfil` de `auth.users` (§10.6) |
 
 ⚠ **Inconsistencia real a respetar:** `servicios` usa la columna **`costo`** y
 `productos` usa **`precio`**. La UI lo normaliza a `$X MXN` al mostrar. No unifiques
 una sin cambiar la otra y las consultas.
 
-⚠ `citas.servicio` almacena el **nombre del servicio como texto**, no un id ni una FK.
-Por eso el wizard puede mandar nombres que no existen en la tabla `servicios`. Igual
-`citas.fecha` es un **string** (no `timestamptz`) y se compara lexicográficamente en
-`ResumenPage` — de ahí el formato `YYYY-MM-DD` en `BookingPage`.
+⚠ `citas.servicio` almacena los **nombres de los servicios como texto**, no un id ni
+una FK, y ahora puede traer **varios separados por `,`** (§8). Por eso el admin tiene
+que resolverlos a mano con `buscarServicio()` (§9.5). Igual `citas.fecha` es un
+**string** (no `timestamptz`) y se compara lexicográficamente en `ResumenPage` — de ahí
+el formato `YYYY-MM-DD` en `BookingPage`.
 
 `barberos.disponible` es booleano, default `true` (`barbero?.disponible ?? true`).
+
+⚠ `citas.cliente_id` es **nullable**: de las 20 filas actuales, **16 la tienen en
+`null`** (creadas antes del portal del cliente) y solo 4 quedan linked a un `auth.users`
+real. Si borras la cuenta de un cliente en Supabase, sus citas quedan huérfanas para
+siempre porque no hay FK ni trigger que las limpie (§18.41).
+
+⚠ **`perfiles` tiene `ON DELETE CASCADE` contra `auth.users`**, pero `citas.cliente_id`
+**no**: borrar la cuenta de un cliente elimina su perfil (y su rol) al instante y deja
+sus citas apuntando a un `auth.users` que ya no existe. `perfiles` y `citas` precisam
+estrategias distintas de borrado; no las trates igual.
+
+⚠ La columna `rol` tiene `CHECK (rol in (...))` pero **no tiene índice propio**: es un
+`text` y se busca por `id` (la PK), así que para la app da igual. Si algún día se
+consulta "dame todos los admins", ese índice hará falta.
 
 ### 10.3 Storage
 
@@ -815,36 +1126,90 @@ Por eso el wizard puede mandar nombres que no existen en la tabla `servicios`. I
 
 ### 10.4 Auth
 
-Solo **email + password** (`signInWithPassword`). No hay OAuth, magic link, ni
-`signUp`. La sesión se persiste automáticamente por supabase-js (localStorage) y se
-recupera con `getSession()` al montar. El primer usuario administrador se crea fuera de
-la app (dashboard de Supabase).
+- **Email + password**, con **dos operaciones**: `signInWithPassword` (vía `login()` de
+  `AuthContext`) y **`signUp`** (`LoginPage` en modo registro). No hay OAuth, ni magic
+  link, ni OTP.
+- ✅ **El registro ya NO envía el rol.** `LoginPage` manda solo
+  `options.data = { full_name }`. El rol lo pone el trigger de la BD
+  (`crear_perfil_al_registrarse`, §10.6), que **siempre inserta `'cliente'` e ignora
+  `user_metadata` a propósito**. Antes sí se mandaba `role: 'cliente'` y eso era
+  auto-asignable: cualquiera podía pedir `admin` (§18.39, resuelto).
+- El registro **no** inicia sesión: al terminar, `LoginPage` muestra "¡Cuenta creada con
+  éxito! Ya puedes iniciar sesión." y vuelve al modo login. Si el proyecto tiene
+  confirmación por email activada en Supabase, el usuario tampoco puede entrar hasta
+  confirmar el correo (§18.44).
+- La sesión la persiste automáticamente supabase-js (localStorage) y se recupera con
+  `getSession()` al montar. El primer usuario administrador se crea fuera de la app
+  (dashboard de Supabase).
+- ⚠ **El rol solo vive en `perfiles`**, escrito por el trigger. `user_metadata` sigue
+  teniendo el `role` de las cuentas viejas (porque se creó antes del cambio) pero
+  **nadie lo lee**: verificado, 0 coincidencias de `user_metadata.role` en `src/`.
+  Puedes limpiar esos datos con `update auth.users set raw_user_meta_data = ...` sin
+  riesgo, pero no hace falta.
+- ⚠ `AuthContext` **no expone** ningún helper de rol: cada pantalla que lo necesita
+  saca `rol` de `useAuth()` y, para decidir destinos, usa `rutaInicioPorRol(rol)`
+  (§5). No vuelvas a leer `user_metadata` "porque es más rápido".
 
-### 10.5 RLS y políticas (verificado en la BD, no en el código)
+### 10.5 RLS y políticas (verificado en la BD por MCP, 2026-10)
 
-**Las 4 tablas tienen RLS habilitado.** Esto no se ve en el repo: se comprobó con el MCP
-de Supabase (`pg_policies`). Las políticas vigentes:
+**Las 6 tablas tienen RLS habilitado** (`barberos`, `citas`, `configuracion`,
+`perfiles`, `productos`, `servicios`). Esto no se ve en el repo: se comprobó con
+`pg_tables.relrowsecurity`. Las políticas vigentes, con su expresión real:
 
-| Tabla | Política | Comando | Rol |
-|---|---|---|---|
-| `citas` | `Cualquiera puede agendar` | INSERT | `anon` |
-| `citas` | `Admin escribe` | ALL | `authenticated` |
-| `barberos` | `Lectura publica` | SELECT | `anon` |
-| `barberos` | `Admin escribe` | ALL | `authenticated` |
-| `productos` | `Lectura publica` | SELECT | `anon` |
-| `productos` | `Admin escribe` | ALL | `authenticated` |
-| `servicios` | `Lectura publica` | SELECT | `anon` |
-| `servicios` | `Admin escribe` | ALL | `authenticated` |
+| Tabla | Política | Comando | Rol | USING / WITH CHECK |
+|---|---|---|---|---|
+| `citas` | `Cualquiera puede agendar` | INSERT | `anon`, **`authenticated`** | `true` |
+| `citas` | `Admin escribe` | ALL | `authenticated` | **`es_admin()`** / **`es_admin()`** |
+| `citas` | `cliente ve sus citas` | SELECT | `authenticated` | `(auth.uid() = cliente_id)` |
+| `barberos` | `Lectura publica` | SELECT | `anon`, **`authenticated`** | `true` |
+| `barberos` | `Admin escribe` | ALL | `authenticated` | **`es_admin()`** / **`es_admin()`** |
+| `productos` | `Lectura publica` | SELECT | `anon`, **`authenticated`** | `true` |
+| `productos` | `Admin escribe` | ALL | `authenticated` | **`es_admin()`** / **`es_admin()`** |
+| `servicios` | `Lectura publica` | SELECT | `anon`, **`authenticated`** | `true` |
+| `servicios` | `Admin escribe` | ALL | `authenticated` | **`es_admin()`** / **`es_admin()`** |
+| `configuracion` | `Lectura publica` | SELECT | `anon`, `authenticated` | `true` |
+| `configuracion` | `Admin escribe` | INSERT | `authenticated` | **`es_admin()`** |
+| `configuracion` | `Admin actualiza` | UPDATE | `authenticated` | **`es_admin()`** / **`es_admin()`** |
+| `perfiles` | `Usuario lee su perfil` | SELECT | `authenticated` | `(auth.uid() = id)` |
 
-⚠ **`citas` NO tiene política de SELECT para `anon`.** Es intencional: la tabla de
-reservas solo la lee el panel (que va autenticado), mientras el sitio público únicamente
-la inserta. No la abras.
+⚠ **`Admin escribe` ya no significa "autenticado"**: significa `es_admin()`, que
+comprueba el rol en `perfiles` (`superadmin` o `admin`). Antes era `using true` /
+`with check true` para **cualquier** cuenta autenticada, o sea que un cliente
+registrado podía editar el catálogo entero desde el navegador. Verificado simulando
+roles: un cliente logueado consigue **0 filas** en cada UPDATE/DELETE y un error en
+cada INSERT.
 
-⚠ **El `Admin escribe` sobre `citas` es nuevo** (migración `admin_escribe_citas`, aplicada
-con autorización explícita del usuario). Antes, el panel **no podía escribir en `citas`**:
-`citas` solo tenía la política `INSERT` de `anon`, así que todo `update` de estado
-(`cambiarEstado` y el nuevo `aplicarEstado`) era rechazado por RLS en silencio, porque el
-código nunca revisaba el `error`. **No vuelvas a descartar el `error` de una escritura.**
+⚠ **RLS en UPDATE/DELETE no lanza error: afecta 0 filas en silencio.** Es el modo de
+fallo que más despista: la sentencia se ejecuta, no hay excepción y el panel no ve
+ningún cambio. Si algún día el panel "no guarda", sospecha de esto antes que del
+código. (El síntoma es el contrario del ya documentado en §18: no es que el `error` se
+pierda, es que nunca se produce.)
+
+⚠ **`Lectura publica` incluye `authenticated` a propósito** (migración
+`lectura_publica_para_autenticados`). PostgREST asigna el rol `authenticated` a las
+peticiones **con sesión**, no `anon`: si la política dice solo `to anon`, el catálogo
+público desaparece para cualquiera que haya iniciado sesión. Lo mismo con
+`Cualquiera puede agendar` (`insert_citas_para_autenticados`): como `/agendar` exige
+confirmar con sesión, el INSERT tenía que admitir `authenticated` o el agendamiento se
+rompía para todos los usuarios registrados. **No "simplifiques" estas dos políticas
+de vuelta a `to anon`.**
+
+⚠ **`citas` NO tiene lectura pública.** Es intencional: las reservas las lee solo
+quien está autenticado, y solo las suyas (`cliente ve sus citas`) o todas si es admin
+(`Admin escribe` → `es_admin()`). Por eso las horas ocupadas se piden por RPC (§10.7).
+
+⚠ **`perfiles` no tiene política de INSERT ni de UPDATE**, a propósito: nadie cambia
+su rol desde la app, **ni siquiera un admin**. El alta la hace el trigger (§10.6) y una
+promoción se hace por SQL. Un `update perfiles set rol = 'superadmin'` devuelve **0
+filas**, silenciosamente.
+
+⚠ **`configuracion` es legible por `anon`**: el nombre, el logo y la descripción de la
+barbería son públicos por diseño (se muestran en el sitio y en los dos paneles). No
+añadas ahí columnas de negocio privada sin revisar esta política.
+
+⚠ **`configuracion` no tiene política de DELETE**: nadie puede borrar esa fila, ni
+siquiera un admin (verificado: `DELETE` → 0 filas para el admin). Si algún día hay que
+borrarla, añade la política explícitamente; no des por hecho que `ALL` la cubría.
 
 Tipos de columna que importan para el cliente:
 
@@ -856,32 +1221,145 @@ Tipos de columna que importan para el cliente:
 - `citas.total`, `servicios.costo` y `servicios.duracion` son `numeric`/`text`: castear
   con `Number()` antes de sumar o comparar.
 
-#### Función RPC `horas_ocupadas` (migración `rpc_horas_ocupadas`)
+#### Trigger `trg_crear_perfil` sobre `auth.users` (migración `trigger_perfil_registro`)
 
 ```sql
-public.horas_ocupadas(fecha_consulta date) returns setof time
-  language sql  security definer  set search_path = public  stable
+create or replace function public.crear_perfil_al_registrarse()
+returns trigger language plpgsql security definer set search_path = ''
+as $$
+begin
+  insert into public.perfiles (id, nombre)
+  values (new.id, coalesce(new.raw_user_meta_data ->> 'full_name',
+                           split_part(coalesce(new.email, ''), '@', 1)))
+  on conflict (id) do nothing;
+  return new;
+end $$;
+
+create trigger trg_crear_perfil after insert on auth.users
+  for each row execute function public.crear_perfil_al_registrarse();
 ```
 
-Devuelve **solo la columna `hora`** de las citas no canceladas de esa fecha. Existe
-porque `citas` **no** es legible por `anon` (expondría nombre, teléfono y correo), y sin
-embargo `/agendar` necesita saber qué horas están tomadas. Se llama desde el cliente con
-`supabase.rpc('horas_ocupadas', { fecha_consulta: 'YYYY-MM-DD' })`.
+- **`security definer` + `set search_path = ''`**: el INSERT lo hace la función (rol
+  `postgres`), no el cliente. Por eso `perfiles` puede quedarse **sin política de
+  escritura** y el rol sigue siendo intocable desde la app.
+- **`user_metadata` se ignora a propósito**: es control del cliente y permitiría
+  auto-asignarse `admin`. Ese era el agujero del §18.39.
+- La misma migración hizo el **backfill** de los 5 usuarios que ya existían (el trigger
+  solo dispara en altas nuevas) y promovió a `superadmin` la cuenta del negocio,
+  `23302011@utfv.edu.mx`.
+- Estado verificado: **1 `superadmin` + 4 `cliente`**, 0 `admin` (§18.49).
+- Para promover a alguien: `update public.perfiles set rol = 'admin' where id = (…)`.
+  **No se puede desde la app**, ni siquiera con sesión de admin (§10.5).
+
+#### Funciones de rol (migración `funciones_rol`)
+
+```sql
+public.rol_actual() returns text   -- rol del usuario autenticado; NULL si no hay sesión
+public.es_admin()   returns boolean -- true si es 'superadmin' o 'admin'
+```
+
+Ambas `language sql stable security definer set search_path = ''` (verificado
+`provolatile = 's'`, `prosecdef = true`). `security definer` porque RLS de `perfiles`
+solo deja ver la fila propia; `stable` porque no cambian dentro de la sentencia.
+
+Permisos verificados (`proacl`): `revoke all from public` **+** `grant execute to
+authenticated`, y **nada para `anon`**. Comprobado simulando `anon`: la llamada falla
+con *permission denied*, así que un visitante sin sesión no puede ni preguntar su rol.
+
+`es_admin()` es la condición que usan **todas** las políticas de escritura del panel
+(§10.5). Si algún día hay un cuarto rol con permisos de escritura, amplíala aquí y en
+las políticas, no en el frontend.
+
+#### Función RPC `horas_ocupadas` (migración `rpc_horas_ocupadas`, ampliada después)
+
+```sql
+public.horas_ocupadas(fecha_consulta date, barbero_id uuid default null)
+  returns setof time  language sql  stable  security definer  set search_path = public
+```
+
+Devuelve **solo la columna `hora`** de las citas no canceladas. Existe porque `citas`
+**no** es legible por `anon` (expondría nombre, teléfono y correo) y sin embargo
+`/agendar` necesita saber qué horas están tomadas. Se llama desde el cliente con
+`supabase.rpc('horas_ocupadas', { fecha_consulta: 'YYYY-MM-DD', barbero_id: null })`
+(los dos parámetros; el segundo es opcional).
 
 - `revoke all … from public` + `grant execute … to anon, authenticated`: sin esto,
   cualquier rol nuevo podría ejecutarla.
 - Devuelve `'HH:MM:SS'`; el cliente recorta a `'HH:MM'` con `.slice(0, 5)`.
+- Con **barbero concreto** devuelve las horas ocupadas de ese barbero; con
+  `barbero_id = null` ("Cualquier barbero") devuelve las horas en las que **ya no queda
+  ni un barbero libre**, y si no hay ningún barbero disponible devuelve cualquier cita
+  viva del día. Son tres ramas en `UNION`.
+- ⚠ Como `citas.hora` es `time`, la comparación es exacta: `'11:00'` y `'11:50'` **no**
+  chocan aunque una cita de 70 min se solape con la siguiente. §18.6.
+
+#### Función RPC `asignar_barbero(fecha_consulta date, hora_consulta time) → uuid`
+
+`language sql, stable, security definer`, ejecutable por `anon` y `authenticated`.
+Devuelve el `id` del **primer barbero disponible que esté libre a esa hora exacta**
+(`order by created_at, nombre limit 1`), o `NULL` si no hay ninguno. La usa
+`BookingPage` cuando el cliente eligió "Cualquier barbero" y escribe el resultado en
+`barbero_id`. ⚠ Misma limitación de solapamiento por intervalo (§18.6).
+
+#### Funciones RPC del portal del cliente
+
+⚠ **Estas dos NO tienen migración registrada.** `list_migrations` del MCP muestra 9
+migraciones y la última es `cita_productos_jsonb` (2026-10-06); tanto `cliente_id`, como
+la política `cliente ve sus citas`, como estas dos funciones se aplicaron **fuera del
+historial de migraciones**. Si reconstruyes el proyecto en otra BD, hay que volver a
+aplicarlas a mano (§18.45).
+
+Ambas son `plpgsql, security definer, set search_path = public` y **solo**
+`authenticated` (nada a `anon`). Definen la autorización en el servidor, que es lo que
+RLS por sí solo no cubre:
+
+```sql
+public.cancelar_cita(p_id uuid) returns void
+  update citas set estado = 'cancelada'
+   where id = p_id and cliente_id = auth.uid()
+     and estado in ('pendiente','confirmada')
+     and (fecha + hora) > (now() at time zone 'America/Mexico_City');
+  if not found then raise exception 'cita_no_modificable'; end if;
+
+public.reagendar_cita(p_id uuid, p_fecha date, p_hora time) returns void
+  if (p_fecha + p_hora) <= (now() at time zone 'America/Mexico_City')
+    then raise exception 'fecha_pasada'; end if;
+  update citas set fecha = p_fecha, hora = p_hora
+   where id = p_id and cliente_id = auth.uid()
+     and estado in ('pendiente','confirmada')
+     and (fecha + hora) > (now() at time zone 'America/Mexico_City');
+  if not found then raise exception 'cita_no_modificable'; end if;
+```
+
+- Las dos **rechazan en el servidor** lo que la UI no puede saber: citas de otro
+  cliente, citas ya pasadas, y citas en `completada` / `cancelada`. Un cliente **solo**
+  puede tocar las suyas mientras estén `pendiente` o `confirmada`.
+- El cliente las llama con `supabase.rpc('cancelar_cita', { p_id })` y
+  `supabase.rpc('reagendar_cita', { p_id, p_fecha, p_hora })`. Los errores llegan como
+  `error` normal de Supabase con el mensaje del `raise`.
+- ⚠ `reagendar_cita` **no revalida solapamientos**: si el slot está ocupado salta el
+  índice `citas_slot_unico` y el error `23505` lo maneja `CitasCliente`.
+- ⚠ El mensaje `'cita_no_modificable'` es opaco: la UI muestra "No se pudo cancelar la
+  cita. Puede que ya haya pasado o cambiado de estado." sin distinguir por qué.
 
 #### Índice único parcial `citas_slot_unico` (migración `slot_unico_por_fecha_hora`)
 
 ```sql
-create unique index citas_slot_unico on public.citas (fecha, hora)
+create unique index citas_slot_unico on public.citas (fecha, hora, barbero_id)
   where coalesce(estado, 'pendiente') <> 'cancelada'
+    and barbero_id is not null
 ```
 
-Bloqueo optimista: dos personas no pueden tomar el mismo slot. El insert duplicado falla
-con **`error.code === '23505'`**, que `BookingPage` traduce a "Ese horario acaba de ser
-tomado, elige otro" + refresco de las horas ocupadas.
+Bloqueo optimista: dos personas no pueden tomar el mismo slot **con el mismo barbero**.
+El insert o el update duplicado falla con **`error.code === '23505'`**, que
+`BookingPage` y `CitasCliente` traducen a "Ese horario acaba de ser tomado, elige otro" +
+refresco de las horas ocupadas.
+
+⚠ **Las citas sin barbero no están cubiertas** por el índice (el `WHERE` exige
+`barbero_id is not null`). Como `BookingPage` auto-asigna barbero, es raro, pero
+`CitaManualForm` y el `BookingForm.jsx` muerto pueden dar de alta una cita sin barbero, y
+entonces **dos clientes sí pueden caer en el mismo horario**. De las 20 filas actuales,
+**15 siguen sin `barbero_id`** (§18.46).
 
 ⚠ La misma migración tuvo que **cancelar una fila duplicada** (2025-09-30 11:50, dos
 citas 'pendiente') porque Postgres no puede crear el índice con el conflicto. **No se
@@ -898,7 +1376,16 @@ que el usuario lo pida:
 | Zona | Sistema | Tokens |
 |---|---|---|
 | **Dashboard `/admin`** (8 archivos en `src/pages/admin/`) | Sistema actual, rediseñado | `slate` / `primary` / `amber` / `navy` |
-| **Sitio público** (`/`, `/agendar`, `/login`) | Sistema anterior, **sin tocar** | `neutral-*` / `sky-500` / `emerald` / `amber` / `yellow` |
+| **Portal del cliente `/cliente`** (2 archivos en `src/pages/cliente/`) | **El mismo sistema claro del admin** | `slate` / `primary` / `navy` |
+| **Sitio público** (`/`, `/agendar`, `/login`, `/servicios`, `/productos`, `/contacto`) | Sistema anterior, **sin tocar** | `neutral-*` / `sky-500` / `emerald` / `amber` / `yellow` |
+
+⚠ **`/cliente` es tema claro aunque su usuario sea un cliente, no un administrador**:
+es una decisión de producto (el portal es una zona "de la empresa") y usa exactamente
+los mismos tokens que `/admin`. Oscurecerlo sería un task aparte, no un fix.
+
+⚠ `/cliente` **sí** está alineado con el admin. Si añades una página ahí, copia
+`ClienteDashboard` / `CitasCliente` y **no** `AdminDashboard` (que trae buscador
+decorativo, badge "ADMIN SUITE" y 6 links de administración).
 
 El rediseño del admin **no** tocó el sitio público. Esa es una costura conocida y
 documentada: `/` y `/admin` ya no se ven como hermanos, y `LoginPage` comparte
@@ -1042,9 +1529,11 @@ token `ink-*`/`bone-*`/`terracotta-*`/`cream-*`.
 ### 11.5 Reglas que siguen vigentes para todo el proyecto
 
 - **Idioma de la UI: español.** No lo traduzcas.
-- **Light mode en el admin, dark en el público.** El admin usa tema claro;
-  el público conserva su dark. **No hay theme switcher** en ninguna zona.
-- Textos `Lorem ipsum` y datos de ejemplo son placeholders, no contenido final.
+- **Light mode en `/admin` y en `/cliente`, dark en el público.** El sitio público
+  conserva su dark. **No hay theme switcher** en ninguna zona.
+- Textos `Lorem ipsum` y datos de ejemplo son placeholders, no contenido final. En
+  `/contacto` además **todas las sedes están vacías** (nombre, dirección, horarios,
+  teléfono y `mapQuery` en blanco), así que los mapas no muestran nada real (§18.47).
 - El sitio público conserva su sistema visual anterior. No lo "normalices" al
   nuevo sin que el usuario lo pida (§17).
 
@@ -1061,18 +1550,32 @@ token `ink-*`/`bone-*`/`terracotta-*`/`cream-*`.
 - El toggle de vista de `CitasAdmin` también usa `aria-pressed`; los botones de navegación
   de fecha llevan `aria-label` y el de hoy lleva `aria-current="date"`.
 - Los `<img>` de barbero en la tabla de citas llevan `alt={nombre}`.
-- Los dos menús hamburguesa (`AdminDashboard` en `<lg`, `Navbar` en `<md`) exponen
-  `aria-label` dinámico ("Abrir menú" / "Cerrar menú"), `aria-expanded` y
-  `aria-controls` apuntando al `id` del panel desplegable; los íconos SVG llevan
-  `aria-hidden` y el botón tiene `focus-visible:ring-2`.
+- Los **tres** menús hamburguesa (`AdminDashboard` en `<lg`, `ClienteDashboard` en
+  `<lg`, `Navbar` en `<md`) exponen `aria-label` dinámico ("Abrir menú" / "Cerrar
+  menú"), `aria-expanded` y `aria-controls` apuntando al `id` del panel desplegable;
+  los íconos SVG llevan `aria-hidden` y el botón tiene `focus-visible:ring-2`.
+- Los links del `Navbar` son `NavLink`, así que la ruta actual recibe
+  `aria-current="page"` sin código extra.
+- Los tabs Próximas/Historial de `CitasCliente` usan `role="tablist"` + `role="tab"` +
+  `aria-selected`, y sus modales usan `role="dialog"` + `aria-modal="true"` +
+  `aria-label`.
+- Los botones "Quitar {servicio}" del sidebar de `BookingPage` llevan `aria-label` con
+  el nombre del ítem, y las horas no disponibles llevan `title="Horario no disponible"`.
 
 **Pendiente (no lo escales sin consultarlo, pero no lo empeores):**
 - Sin `aria-live` en los mensajes de error ni en los estados de carga. `CitasAdmin`
   usa `role="alert"` en el banner de error de escritura (parcial, no es `aria-live`).
-- La barra de búsqueda del topbar es decorativa: no filtra nada.
-- La navegación de la landing son `<a href="#">`, sin `aria-current`.
-- El sitio público no tiene labels asociados en sus inputs.
-- `setAddon` en `BookingPage` sigue declarado y sin usar (§18).
+- La barra de búsqueda del topbar del admin es decorativa: no filtra nada. El
+  `ClienteDashboard` **no la tiene**, así que el portal del cliente no arrastra esa
+  deuda.
+- ⚠ Los tabs de `CitasCliente` son un `role="tablist"` **sin `tabpanel`**: es ARIA
+  incompleto, justo lo que el admin evitó a propósito usando `role="group"` +
+  `aria-pressed` en lugar de un tablist (§18.48).
+- ⚠ El modal de `BookingPage` (confirmación final) **no** tiene `role="dialog"`, a
+  diferencia de los de `CitasCliente` y de los `*Form` del admin.
+- El sitio público no tiene labels asociados en sus inputs: en `/agendar` los campos
+  del paso 3 usan `<label>` **sin `htmlFor`/`id`**, y los inputs de filtro de
+  `ServiciosPage`/`ProductosPage` dependen solo del `placeholder`.
 
 ---
 
@@ -1114,8 +1617,33 @@ librerías visuales ni de UI: el layout es Tailwind inline y nada más.
 | `grid grid-cols-2 gap-4 lg:grid-cols-3` | las 3 métricas de `ServiciosAdmin` (la 3ª ocupa `col-span-2 lg:col-span-1`) |
 
 El shell del admin **sí es responsive**: en `<lg` la navegación vive en el menú
-hamburguesa y en `lg+` en el rail lateral. Es el **único** archivo del proyecto con
-`useState` para navegación en el admin, y ese estado no hace nada por encima de `lg`.
+hamburguesa y en `lg+` en el rail lateral. Es el único archivo del admin con
+`useState` para navegación, y ese estado no hace nada por encima de `lg`.
+
+### 12.1b Portal del cliente `/cliente`
+
+`ClienteDashboard.jsx` **copia el patrón del shell del admin tal cual** (§12.1): misma
+raíz `flex min-h-screen flex-col bg-slate-50 lg:flex-row`, mismo `<aside>`
+`fixed … lg:static lg:flex lg:w-64` con `hidden` por debajo de `lg`, misma barra móvil
+`relative z-40 h-14 … lg:hidden`, mismo panel `fixed inset-x-0 top-14 z-50` y misma
+capa exterior `fixed inset-0 z-30 bg-navy/20 lg:hidden`. **Si cambias uno, cambias los
+dos.**
+
+| Patrón | Dónde en `/cliente` |
+|---|---|
+| `flex min-h-screen flex-col bg-slate-50 lg:flex-row` + `onKeyDown` para `Escape` | raíz del shell |
+| `flex-1 p-4 lg:p-6` | `main` que aloja el `<Outlet />` |
+| `sticky top-0 z-30 border-b border-slate-200 bg-white` + `h-14 … px-4 lg:px-6` | topbar con el saludo |
+| `sm:inline-flex` | el enlace "Ver sitio web" (oculto en móvil) |
+| `mx-auto max-w-3xl` | contenedor de `CitasCliente` |
+| `flex flex-wrap items-start justify-between gap-3` | cabecera de "Mis citas" + botón "+ Nueva cita" |
+| `flex-1 rounded-md px-3 py-2 text-sm` sobre `bg-slate-200/60 p-1` | tabs Próximas/Historial |
+| `flex flex-wrap gap-2` | botones "Reagendar" / "Cancelar cita" de cada tarjeta |
+| `max-h-[90vh] w-full max-w-md overflow-y-auto` | modales de cancelar/reagendar |
+
+No hay tablas en el portal del cliente: las citas son **tarjetas**
+(`rounded-xl border border-slate-200 bg-white p-4`), así que no hay ningún
+`overflow-x-auto` que se desborde en móvil.
 
 ### 12.2 Sitio público (sin cambios)
 
@@ -1124,15 +1652,17 @@ hamburguesa y en `lg+` en el rail lateral. Es el **único** archivo del proyecto
 | `px-8 py-16` + `max-w-7xl mx-auto` | contenedores y secciones públicas |
 | `grid md:grid-cols-2 gap-12` | `Hero` (texto + imagen) |
 | `grid md:grid-cols-2 gap-8` | encabezado de sección de `Servicios` / `Productos` |
-| `grid md:grid-cols-4 gap-4` | grid de tarjetas de la landing |
+| `grid sm:grid-cols-2 lg:grid-cols-4 gap-4` | grid de tarjetas de `Servicios` y `Productos` (la landing) |
 | `grid lg:grid-cols-3 gap-8` + `lg:col-span-2` | `BookingPage` |
-| `grid sm:grid-cols-2 gap-4` | selector de servicio, datos del cliente en el wizard |
+| `grid sm:grid-cols-2 gap-4` | selector de servicio, datos del cliente y tarjetas de barbero en el wizard |
 | `grid grid-cols-7 gap-2` | strip de días del wizard |
+| `scroll-mt-4` + `id="servicios"` / `id="productos"` | secciones ancla de la landing (destino del CTA del Hero) |
 | `hidden md:flex` | links y sección derecha del `Navbar` |
 | `md:hidden` | hamburguesa del `Navbar` y su panel desplegable |
 | `lg:sticky lg:top-8 h-fit` | sidebar de resumen del wizard |
 | `flex flex-wrap gap-3` | chips de hora del wizard |
 | `px-4` | `LoginPage` y contenedores centrados pequeños |
+| `max-w-3xl` | contenido de `ServiciosPage`, `ProductosPage` y `ContactoPage` |
 
 Gaps y paddings en uso: `gap-2/3/4/6/8/10/12`, `p-4/p-5/p-6/p-8`, `mb-2/4/6/8/10`,
 `px-4/5/6/8`.
@@ -1140,14 +1670,20 @@ Gaps y paddings en uso: `gap-2/3/4/6/8/10/12`, `p-4/p-5/p-6/p-8`, `mb-2/4/6/8/10
 ### 12.3 Puntos débiles preexistentes (no los arregles sin avisar)
 
 - `Navbar`: los links **y** la sección derecha (sesión + `AGENDAR CITA`) desaparecen
-  bajo `md`, pero ahora hay **menú hamburguesa** que los recupera, incluido el
-  teléfono `+00 00000000` que antes solo se veía en `lg+`.
-- `BookingPage`: los `dias` son una tira fija de 7 columnas sin scroll.
+  bajo `md`, pero hay **menú hamburguesa** que los recupera, incluido el teléfono
+  `+00 00000000` que antes solo se veía en `lg+`.
+- `BookingPage`: los `dias` son una tira fija de 7 columnas sin scroll horizontal.
 - `App.css` (muerto) sí tenía sus propios `@media (max-width: 1024px)`, pero no se
   aplica.
-- Los dos menús hamburguesa (admin y público) cierran con `Escape` **solo si el foco
-  está dentro**, porque el listener es un `onKeyDown` en el contenedor y no un
-  `document.addEventListener`. Es deliberado: evita `useEffect` + listener global.
+- ⚠ Los **tres** menús hamburguesa (admin, cliente y público) cierran con `Escape`
+  **solo si el foco está dentro**, porque el listener es un `onKeyDown` en el
+  contenedor y no un `document.addEventListener`. Es deliberado: evita `useEffect` +
+  listener global. Si algún día hace falta cerrar desde fuera, habrá que añadir el
+  listener global **solo** a esos tres shells.
+- ⚠ El panel móvil del `Navbar` **empuja** el contenido en vez de flotar sobre él (no
+  es `fixed` como los de los paneles del admin y del cliente), porque el `<nav>` no es
+  `sticky`. Al abrirlo, la página salta. No es un bug de layout, pero se nota al
+  navegar en móvil.
 
 Al añadir UI responsiva, sigue los patrones de §12.1 (admin) o §12.2 (público)
 según la zona, en vez de inventar un sistema.
@@ -1170,6 +1706,13 @@ Si la petición falla, la lista queda vacía y el usuario ve el estado vacío
 ("Aún no hay servicios.") **en lugar de un error**. Los `|| 0` de `ResumenPage` evitan
 que un `count` `null` rompa el render.
 
+⚠ **Excepción ya resuelta en 2 sitios** (patrón correcto, no lo "normalices"):
+`Servicios.jsx` y `Productos.jsx` (públicos) revisan el `error`, muestran un estado
+**"No pudimos cargar los servicios/productos."** con botón **"Reintentar"** que
+vuelve a llamar al `cargarX()`, y `CitasCliente` tiene un `errorCarga` aparte con
+`role="alert"`. Ninguno de los dos es un `try/catch`: es `if (error) { console.error;
+setError(true) }` con su propio flag.
+
 **B. Escrituras en formularios — `try/catch` + mensaje genérico.**
 Los tres `*Form` usan el bloque `try { … if (error) throw error; onGuardado() } catch
 { console.error; setErrorMsg('Algo salió mal, intenta de nuevo.'); setGuardando(false) }`.
@@ -1177,9 +1720,17 @@ El mensaje es **siempre el mismo**, nunca se muestra el error real de Supabase a
 usuario. Ojo: en el `catch` se forgetea `guardando`; en éxito el componente se
 desmonta (lo llama `onGuardado` → `setMostrarForm(false)`).
 
-**C. Wizard y login — `if (error)` + estado de pantalla.**
-`BookingPage` / `BookingForm` / `LoginPage` revisan el `error` y setean
-`estadoEnvio`/`error` local; el texto al usuario es fijo.
+**C. Wizard, login y portal del cliente — `if (error)` + estado de pantalla.**
+`BookingPage` / `BookingForm` / `LoginPage` / `CitasCliente` revisan el `error` y
+setean `estadoEnvio`/`error` local; el texto al usuario es fijo. Lo particular de
+`CitasCliente` es que **distingue** el `23505` (slot tomado → refresca horas y avisa) del
+resto ("No se pudo reagendar la cita. Intenta de nuevo."), y es el único que muestra el
+mensaje real de Supabase cuando el registro falla (`registerError.message` en
+`LoginPage`, §6.3).
+
+⚠ El registro de `LoginPage` **sí** muestra el mensaje crudo de Supabase
+(`registerError.message`, en inglés y a veces técnico) mientras que el login muestra un
+texto fijo en español. Inconsistencia de UX, no un bug.
 
 **D. Deletes — `confirm()` nativo, sin manejar el error.**
 ```js
@@ -1231,7 +1782,7 @@ Configuración relevante:
 **No hay tests automatizados.** La verificación es manual + lint + build.
 
 ```bash
-pnpm lint        # DEBE seguir fallando con EXACTAMENTE los mismos 7 errores (§15.1)
+pnpm lint        # DEBE seguir fallando con EXACTAMENTE los mismos 10 errores (§15.1)
 pnpm build       # DEBE terminar sin errores
 pnpm dev         # smoke test manual en el navegador
 ```
@@ -1241,76 +1792,85 @@ pnpm dev         # smoke test manual en el navegador
 `pnpm lint` **falla en el estado actual del repo** con:
 
 ```
-✖ 6 problems (6 errors, 0 warnings)
+✖ 10 problems (10 errors, 0 warnings)
 ```
 
-**Desglose exacto por archivo y regla:**
+**Desglose exacto por archivo, línea y regla** (medido con
+`pnpm exec eslint . --format json` el 2026-10-12, después del pull `853ca9f..8809213`):
 
-1. `src/context/AuthContext.jsx`
-   * regla: `react-refresh/only-export-components`
-   * 1 error (el archivo exporta `AuthProvider` y `useAuth`)
-2. `src/pages/admin/BarberosAdmin.jsx`
-   * regla: `react-hooks/immutability`
-   * 1 error (`cargarBarberos` accessed before it is declared)
-3. `src/pages/admin/CitasAdmin.jsx`
-   * regla: `react-hooks/immutability`
-   * 1 error (`cargarCitas` accessed before it is declared)
-4. `src/pages/admin/ProductosAdmin.jsx`
-   * regla: `react-hooks/immutability`
-   * 1 error (`cargarProductos` accessed before it is declared)
-5. `src/pages/admin/ResumenPage.jsx`
-   * regla: `react-hooks/immutability`
-   * 1 error (`cargarDatos` accessed before it is declared)
-6. `src/pages/admin/ServiciosAdmin.jsx`
-   * regla: `react-hooks/immutability`
-   * 1 error (`cargarServicios` accessed before it is declared)
+| # | Archivo | Línea | Regla |
+|---|---|---|---|
+| 1 | `src/context/AuthContext.jsx` | 69 | `react-refresh/only-export-components` |
+| 2 | `src/components/Servicios.jsx` | 25 | `react-hooks/immutability` |
+| 3 | `src/components/Productos.jsx` | 17 | `react-hooks/immutability` |
+| 4 | `src/pages/ServicesPage.jsx` | 12 | `react-hooks/immutability` |
+| 5 | `src/pages/ProductosPage.jsx` | 12 | `react-hooks/immutability` |
+| 6 | `src/pages/admin/BarberosAdmin.jsx` | 89 | `react-hooks/immutability` |
+| 7 | `src/pages/admin/CitasAdmin.jsx` | 296 | `react-hooks/immutability` |
+| 8 | `src/pages/admin/ProductosAdmin.jsx` | 64 | `react-hooks/immutability` |
+| 9 | `src/pages/admin/ResumenPage.jsx` | 77 | `react-hooks/immutability` |
+| 10 | `src/pages/admin/ServiciosAdmin.jsx` | 111 | `react-hooks/immutability` |
 
 Totales:
 
 | Regla | Cantidad |
 |---|---|
-| `react-hooks/immutability` | 5 |
+| `react-hooks/immutability` | 9 |
 | `react-refresh/only-export-components` | 1 |
-| **Total** | **6 errores, 0 warnings** |
+| **Total** | **10 errores, 0 warnings** |
 
-📉 **La línea base bajó de 7 a 6** al conectar `/agendar` a Supabase (2026-10): se
-eliminó el estado `addon` de `BookingPage.jsx` porque la página ya no ofrece add-on
-(§18.2), y con él su `no-unused-vars`. Fue un cambio **pedido explícitamente**, no un
-"arreglo de paso". `BookingPage.jsx` ahora tiene **0 errores**.
+📈 **La línea base subió de 8 a 10** con el pull `853ca9f..8809213`, que puso a
+`Servicios.jsx` y `Productos.jsx` (los públicos) a leer de Supabase con el patrón
+`useEffect(() => { cargarX() }, [])` **antes** de declarar `cargarX` con `const`. Los
+otros 8 ya estaban (5 del admin, `AuthContext`, `ProductosPage` y `ServicesPage`).
+Fue un cambio del usuario; aquí queda registrado para que nadie lo cuente como
+regresión propia.
 
-Los 5 de `react-hooks/immutability` comparten el mismo mensaje,
+Los 9 de `react-hooks/immutability` comparten el mismo mensaje,
 *"Cannot access variable before it is declared"*: el patrón
 `useEffect(() => { cargarX() }, [])` invoca una función declarada después con
-`const`. Por eso **`src/pages/admin/AdminDashboard.jsx`, los `*Form` y
-`src/pages/BookingPage.jsx` tienen 0 errores** y no aparecen en la lista.
+`const`.
 
 **Estos errores son baseline preexistente. NO deben corregirse como parte del
 rediseño visual ni de ningún trabajo no solicitado.** Reglas:
 
 - No los "arregles" de paso mientras haces otra cosa: mezclar un fix no solicitado
   con tu cambio vuelve el diff imposible de revisar.
-- **No subas el número.** Si tu cambio añade un error, el total será > 7 y eso es
+- **No subas el número.** Si tu cambio añade un error, el total será > 10 y eso es
   **un fallo tuyo**. El desglose por archivo de arriba es la referencia.
 - Si te piden arreglarlos, es un task aparte: mueve la función **arriba** del
   `useEffect` o conviértela en `function` declaration / `useCallback`.
 
-**Verificado durante el rediseño visual del admin (6 etapas).** En cada etapa se
-ejecutó `pnpm lint` después de los cambios y el resultado se mantuvo **exactamente
-en estos 7 errores, mismos archivos, mismas reglas, 0 errores nuevos**:
+**Archivos con 0 errores** (referencia de que el patrón se puede hacer bien):
+`App.jsx`, `main.jsx`, `Navbar.jsx`, `Hero.jsx`, `Contacto.jsx`, `LoginPage.jsx`,
+`BookingPage.jsx`, `supabaseClient.js`, `ConfiguracionProvider.jsx`,
+`configuracion.js`, `useConfiguracion.js`, `useConfirmarCita.js`,
+**`src/pages/cliente/ClienteDashboard.jsx` y `CitasCliente.jsx`**,
+`AdminDashboard.jsx`, `ConfiguracionAdmin.jsx`, los 4 `*Form` y `CitaManualForm.jsx`.
 
-| Etapa | Archivo tocado | Lint |
+⚠ `CitasCliente.jsx` tiene un `// eslint-disable-next-line react-hooks/set-state-in-effect`
+en su efecto de carga: **no lo quites** al "arreglar" esa página, o aparecerá un error
+nuevo. El patrón correcto ya está aplicado ahí: `cargarCitas` en
+`useCallback([userId])` (§9.7).
+
+**Histórico del rediseño visual del admin (9 etapas).** En cada etapa se ejecutó
+`pnpm lint` y no se introdujeron errores nuevos. Los totales de aquella época (6 y 7)
+**ya no aplican**: el repo cambió por debajo con el pull del portal del cliente. Se
+conservan solo como registro de qué archivos se tocaron.
+
+| Etapa | Archivo tocado | Resultado de entonces |
 |---|---|---|
-| 1 | `src/index.css`, `src/pages/admin/AdminDashboard.jsx` | 7 / 0 nuevos |
-| 2 | `src/index.css`, `src/pages/admin/ResumenPage.jsx` | 7 / 0 nuevos |
-| 3 | `ServiciosAdmin.jsx`, `ProductosAdmin.jsx`, `BarberosAdmin.jsx` | 7 / 0 nuevos |
-| 4 | `src/pages/admin/CitasAdmin.jsx` | 7 / 0 nuevos |
-| 5 | `ServicioForm.jsx`, `ProductoForm.jsx`, `BarberoForm.jsx` | 7 / 0 nuevos |
-| 6 | `src/index.css` (tokens crema/terracota) + todos los archivos admin | 7 / 0 nuevos |
-| 7 | `CitasAdmin.jsx` (reescrito) + `CitaManualForm.jsx` (nuevo) | 7 / 0 nuevos |
-| 8 | `ServiciosAdmin.jsx`, `ServicioForm.jsx` | 7 / 0 nuevos |
-| 9 | `ProductoForm.jsx`, `BarberoForm.jsx`, `ProductosAdmin.jsx` (prop), `src/index.css` (`--font-sans` + antialiasing) | 7 / 0 nuevos |
+| 1 | `src/index.css`, `AdminDashboard.jsx` | 0 nuevos |
+| 2 | `src/index.css`, `ResumenPage.jsx` | 0 nuevos |
+| 3 | `ServiciosAdmin.jsx`, `ProductosAdmin.jsx`, `BarberosAdmin.jsx` | 0 nuevos |
+| 4 | `CitasAdmin.jsx` | 0 nuevos |
+| 5 | `ServicioForm.jsx`, `ProductoForm.jsx`, `BarberoForm.jsx` | 0 nuevos |
+| 6 | `src/index.css` (tokens) + todos los admin | 0 nuevos |
+| 7 | `CitasAdmin.jsx` (reescrito) + `CitaManualForm.jsx` (nuevo) | 0 nuevos |
+| 8 | `ServiciosAdmin.jsx`, `ServicioForm.jsx` | 0 nuevos |
+| 9 | `ProductoForm.jsx`, `BarberoForm.jsx`, `ProductosAdmin.jsx`, `src/index.css` | 0 nuevos |
 
-`pnpm build` terminó correctamente en las 6 etapas, sin errores de compilación de
+`pnpm build` terminó correctamente en las 9 etapas, sin errores de compilación de
 clases Tailwind.
 
 ### 15.2 Checklist manual por área
@@ -1318,16 +1878,32 @@ clases Tailwind.
 Probado en Chrome DevTools. La app necesita `.env` con las dos variables válidas y
 **conectividad a Supabase** — sin red los listados del admin salen vacíos.
 
-- **`/`** — carga el hero con `/barber.jpg`; click en una tarjeta de `Servicios`
-  navega a `/agendar?servicio=...`; el query param **no** preselecciona nada
-  (esperado, ver §8).
-- **`/agendar`** — los 3 pasos avanzan y retroceden; "Siguiente" permanece `disabled` sin
-  selección; la hora se elige; el sidebar refleja servicio/fecha/total; el total **no**
-  incluye los 250 del add-on (porque `addon` es siempre `false`); al confirmar aparece
-  la pantalla de "¡Reservación confirmada!" y **se inserta una fila en la tabla
-  `citas`** (verifícalo en el dashboard de Supabase).
+- **`/`** — carga el hero con `/barber.jpg`; "EXPLORAR SERVICIOS ↓" hace scroll suave a
+  la sección de servicios; los grids de `Servicios` y `Productos` cargan desde Supabase
+  (y con Supabase caído muestran "No pudimos cargar…" + botón Reintentar); click en una
+  tarjeta navega a `/agendar?servicio=...` y el query param **no** preselecciona nada
+  (esperado, §18.3).
+- **`/servicios`, `/productos`, `/contacto`** — cargan dentro del layout público y el
+  `Navbar` marca el link de la ruta actual; en `<md` el menú hamburguesa abre y cierra.
+  `/contacto` hoy muestra mapas vacíos porque las sedes son placeholders (§18.47).
+- **`/agendar` sin sesión** — los 3 pasos avanzan sin pedir nada; al pulsar confirmar,
+  el botón dice "INICIAR SESIÓN PARA RESERVAR →" y **guarda el borrador**: al entrar te
+  devuelve a `/agendar` con servicios, productos, barbero, fecha, hora y datos del
+  cliente ya restaurados (§8).
+- **`/agendar` con sesión** — confirmación; el sidebar refleja servicios/productos/
+  duración/total; "Agregar otro servicio o producto" en el modal conserva la selección;
+  al confirmar aparece "¡Reservación confirmada!" y **se inserta una fila en `citas`
+  con `cliente_id` poblado** (verifícalo en el dashboard de Supabase).
 - **`/login`** — credenciales malas → "Correo o contraseña incorrectos."; buenas →
-  redirige a `/admin`.
+  `/admin` si `role === 'admin'`, si no → `/`. El enlace de registro crea la cuenta y
+  muestra "¡Cuenta creada con éxito!" (no entra solo).
+- **`/cliente` sin sesión** — redirige a `/login` (mismo guard que `/admin`).
+- **`/cliente` con sesión de cliente** — solo aparecen las citas con
+  `cliente_id = auth.uid()` (las de `cliente_id IS NULL` **no** se ven); los tabs
+  Próximas/Historial cuadran con los estados de la BD; "Reagendar" mueve la cita y
+  respeta el `23505`; "Cancelar" la deja en `cancelada` **sin** borrarla.
+- **`/cliente` con sesión de admin** — entra (el guard no mira el rol) y ve la lista
+  vacía (esperado, §5).
 - **`/admin` sin sesión** — redirige a `/login`.
 - **`/admin`** — los 4 contadores coinciden con Supabase; "Citas de esta semana" filtra
   bien; el item activo del sidebar es correcto también en las subrutas.
@@ -1336,25 +1912,33 @@ Probado en Chrome DevTools. La app necesita `.env` con las dos variables válida
   el `confirm`), y que la lista se recargue.
 - **`/admin/citas`** — seleccionar una cita abre el detalle; los 4 botones de estado
   cambian el color del badge y persisten tras recargar; una cita **sin `estado`** (las
-  nuevas) se muestra como `pendiente`.
-- **Logout** — cierra sesión y `/admin` vuelve a pedir login.
-- **Responsive** — reduce a 375px y 768px: la landing y `/agendar` se adaptan; el admin
-  **no** (esperado, ver §12).
+  nuevas) se muestra como `pendiente`; una cita con **varios servicios** los muestra en
+  lista y suma sus duraciones; los productos de la cita salen como `+ Nombre · $X MXN`.
+- **`/admin/configuracion`** — guardar cambia nombre y logo **en vivo** en el rail del
+  admin (misma fila `configuracion`), sin recargar.
+- **Logout** — cierra sesión y `/admin` **y** `/cliente` vuelven a pedir login.
+- **Responsive** — reduce a 375px y 768px: la landing, `/agendar` y los dos paneles
+  (admin y cliente) se adaptan; el rail se sustituye por el menú hamburguesa en los tres
+  shells.
 - **Errores** — con Supabase caído, los listados del admin muestran el estado vacío, no
-  un mensaje de error (esperado, ver §13.A).
+  un mensaje de error (esperado, ver §13.A); en cambio los catálogos públicos y
+  `/cliente` **sí** avisan del fallo (§13.A).
 
 ### 15.3 Estado de git (importante)
 
-El repo tiene **un solo commit** (`0a75600 Proyecto - Barberia (Inicio y Reservas de Citas)`)
-y **trabajo sin commitear**: el panel de administración completo y **toda la
-autenticación** (`src/context/`, `src/pages/admin/`, `src/pages/LoginPage.jsx`,
-`src/components/ProtejerRuta.jsx`) existen **solo en el working tree**, no en el
-historial. `App.jsx`, `BookingPage.jsx`, `BookingForm.jsx` y `main.jsx` tienen cambios
-locales sin commitear.
+El repo ya está **publicado y con historial**: 30 commits, con merges de PR (#12, #13,
+#14). Todo el trabajo anterior que estaba "solo en el working tree" (panel de admin,
+auth, contexto de configuración, wizard) **ya está commiteado**.
 
-**Consecuencia: no hagas `git checkout`, `git restore`, `git reset` ni `git stash`
-sobre estos archivos** — perderías el panel de admin y la auth. Antes de cualquier
-operación destructiva de git, pregunta.
+Estado del working tree en 2026-10-12: un único archivo modificado,
+`src/context/ConfiguracionProvider.jsx`, y el cambio es **solo comentarios**: se
+borraron las 4 líneas de cabecera del archivo (`// src/context/…` y el párrafo que
+explicaba el provider). Ningún cambio funcional. Sin archivos sin trackear.
+
+⚠ Aun así, **antes de cualquier comando destructivo** (`checkout`, `restore`, `reset`,
+`stash`) pregúntalo: `git reset --hard` o un `restore` masivo tirarían la rama de
+trabajo del cliente y el rediseño del admin si no están commiteados. Comprueba
+`git status` primero.
 
 ---
 
@@ -1365,12 +1949,14 @@ operación destructiva de git, pregunta.
 | `.env` | Credenciales de Supabase. Gitignored. **Nunca commitear, nunca imprimir en una respuesta, nunca subir.** |
 | `src/supabaseClient.js` | Único punto de conexión. Un typo en el nombre de la env var rompe **toda** la app silenciosamente. |
 | `src/context/AuthContext.jsx` | Sesión y `onAuthStateChange`. El cleanup incorrecto deja listeners duplicados. |
-| `src/components/ProtejerRuta.jsx` | Único guard de rutas. Romperlo deja el admin abierto o inaccesible. |
+| `src/components/ProtejerRuta.jsx` | Guard de rutas de **`/admin` y `/cliente`**. Romperlo deja ambos paneles abiertos o inaccesibles. |
 | `src/main.jsx` | Orden de los providers (`BrowserRouter` > `AuthProvider`). |
-| `src/App.jsx` | Tabla de rutas. Único lugar donde se registran las páginas. |
+| `src/App.jsx` | Tabla de rutas **y** los 3 layouts. Único lugar donde se registran las páginas. La ruta `/cliente` está al final del `<Routes>`, fuera del layout público. |
 | `package.json` / `pnpm-lock.yaml` | No los edites para "subir una dependencia menor". |
 | `public/barber.jpg` | 2.2 MB, referenciado por ruta absoluta `/barber.jpg` en `Hero.jsx`. Si lo mueves o renuevas, actualiza el `src`. |
-| `src/pages/BookingPage.jsx` | El archivo más grande y el más frágil del flujo de citas (§8). |
+| `src/pages/BookingPage.jsx` | El archivo más grande y el más frágil del flujo de citas (985 líneas: wizard + borrador en `sessionStorage` + auto-asignación de barbero). §8. |
+| `src/pages/cliente/CitasCliente.jsx` | Única vista de las citas del usuario. Depende de la política `cliente ve sus citas` **y** de las RPC `cancelar_cita` / `reagendar_cita`: si cambias cualquiera de las dos cosas, revisa este archivo y sus modales. |
+| `src/pages/cliente/ClienteDashboard.jsx` | Shell de `/cliente`. Copia el patrón de `AdminDashboard`: si cambias uno, cambia los dos (§12.1b). |
 | `vite.config.js` / `eslint.config.js` | Afectan a toda la app. El lint ya falla (§15.1): tocar la config puede cambiar la línea base entera. |
 
 ---
@@ -1394,47 +1980,91 @@ operación destructiva de git, pregunta.
 
 **Backend y datos**
 - **No renombres ni reconfigures las tablas** de Supabase (`citas`, `servicios`,
-  `productos`, `barberos`).
+  `productos`, `barberos`, `configuracion`).
 - **No unifiques `servicios.costo` y `productos.precio`** sin migrar también las
   consultas, los formularios y la UI.
 - **No cambies el bucket `imagenes`** ni las carpetas `servicios/`, `productos/`,
   `barberos/`. No lo hagas privado sin migrar las URLs ya guardadas.
 - **No introduzcas políticas de RLS, vistas, funciones SQL ni triggers** sin autorización
-  explícita. **Las 4 tablas YA tienen RLS habilitado** con las políticas de §10.5: no es
-  opcional ni se puede "quitar". Dos trampas concretas: (1) el sitio público inserta en
+  explícita. **Las 6 tablas YA tienen RLS habilitado** con las políticas de §10.5: no es
+  opcional ni se puede "quitar". Cinco trampas concretas: (1) el sitio público inserta en
   `citas` con la clave publicable desde el navegador, así que **cualquier política sobre
-  `citas` debe seguir admitting `INSERT` a `anon`** o se rompe el agendamiento público;
+  `citas` debe admitir `INSERT` tanto a `anon` como a `authenticated`**, o se rompe el
+  agendamiento para los usuarios registrados;
   (2) el panel va autenticado, así que **cualquier tabla que el panel escriba necesita una
-  política `authenticated`** o el `update` falla en silencio.
+  política `authenticated` cuya condición sea `es_admin()`**, o el `update` afecta 0 filas
+  sin avisar;
+  (3) una política declarada solo `to anon` **desaparece para quien tiene sesión**:
+  PostgREST usa el rol `authenticated` en las peticiones con JWT, así que las lecturas
+  del catálogo son `to anon, authenticated`;
+  (4) **el cliente solo tiene SELECT sobre `citas`** (`auth.uid() = cliente_id`): cualquier
+  escritura suya tiene que pasar por una RPC `SECURITY DEFINER`, no por un `update`
+  directo;
+  (5) las funciones de `public` (`rol_actual`, `es_admin`, `cancelar_cita`,
+  `reagendar_cita`, `asignar_barbero`, `horas_ocupadas`) llevan `revoke all` + `grant
+  execute` a roles concretos: **al recrearlas, repite los grants**, o el cliente recibe
+  `permission denied`.
+- ⚠ **El rol se lee de `perfiles`, nunca de `auth.users.user_metadata`.** No reintroduzcas
+  `user_metadata.role` en ninguna pantalla: lo escribe el cliente y por eso era
+  auto-asignable (§18.39). Para promover a alguien, SQL; para cambiar de cuenta, login.
+- ⚠ **`perfiles` no admite escrituras desde la app, ni con sesión de admin.** Si algún día
+  necesitas una pantalla de "usuarios y roles", es una feature nueva que pide
+  autorización explícita y una RPC; no abras la tabla con un `grant`.
+- ⚠ **El guard de rutas no es la autorización**: `ProtectedRoute` decide la navegación,
+  RLS decide los permisos (§5). Que un cliente no vea el panel no significa que no pueda
+  escribir, y al revés. Verifica siempre en la BD.
 - **No metas claves de servicio (`service_role`) en el frontend.** Todo es
   cliente-side por diseño.
 - **No cambies el payload de `citas`** sin actualizar a la vez `CitasAdmin` (que lee
-  `correo`, `notas`, `addon`, `total`, `estado`) y su panel de detalle.
+  `correo`, `notas`, `productos`, `total`, `estado`), `CitasCliente` (que lee
+  `productos` y filtra por `cliente_id`) y `BookingForm.jsx` si algún día resucita.
 
 **Arquitectura y routing**
 - **No muevas `AuthProvider`** fuera de `main.jsx` ni lo bajes dentro de `App`.
-- **No elimines `ProtectedRoute`** de la ruta `/admin` ni su redirect.
+- **No elimines `ProtectedRoute`** de las rutas `/admin` **y** `/cliente`, ni sus redirects.
 - **No renombres `src/components/ProtejerRuta.jsx`** sin actualizar el import en
   `App.jsx`.
 - **No introduzcas `createBrowserRouter` / loaders / actions.** El router es
   `<Routes>` plano; los datos se cargan en `useEffect`.
 - **No crees un store de datos "compartido"** para deduplicar los `cargarX()`: cada
-  página es dueña de sus datos. Es redundante a propósito y así funciona.
+  página es dueña de sus datos. Es redundante a propósito y así funciona. La excepción es
+  `useConfirmarCita`, que no guarda datos: recibe el setter de la página (§9.8).
 - **No conviertas el wizard de 3 pasos** en otra cosa (un formulario único, un modal,
   multi-página). El `pasoActual` + sidebar pegajoso es el diseño acordado.
+- **No compongas `AdminDashboard` con `ClienteDashboard`** (ni al revés) para "ahorrar
+  código": son copias deliberadas con contenidos distintos (6 links de administración
+  frente a 1). Si algún día se unifican, extrae el shell común a un componente nuevo; no
+  mezcles las dos páginas.
+- **No quites el gate de sesión de `/agendar`** (`requiereLogin` + borrador) sin hablarlo:
+  es lo que garantiza que `citas.cliente_id` se rellene y que el portal del cliente vea
+  las reservas.
 
-**UI/UX — aplica al dashboard `/admin`; el sitio público tiene su propio sistema**
+**UI/UX — aplica al dashboard `/admin` y al portal `/cliente`; el sitio público tiene su
+propio sistema**
 
-Estas reglas son **específicas del admin**. El sitio público (`/`, `/agendar`,
-`LoginPage`, `Navbar`, `Hero`, `Servicios`, `Productos`) conserva su lenguaje
-anterior (`neutral-*`, `sky-500`, `emerald`, `amber`, `yellow`) y **no se
-"normalizó" al nuevo**: esa costura es conocida y solo se cierra si el usuario lo
-pide.
+Estas reglas son **específicas de los dos paneles claros**. El sitio público (`/`,
+`/agendar`, `/login`, `/servicios`, `/productos`, `/contacto`, `Navbar`, `Hero`,
+`Servicios`, `Productos`, `Contacto`) conserva su lenguaje anterior (`neutral-*`,
+`sky-500`, `emerald`, `amber`, `yellow`) y **no se "normalizó" al nuevo**: esa costura
+es conocida y solo se cierra si el usuario lo pide.
 
-- **El dashboard usa `cream-*` / `coffee-*` / `terracotta-*` / `sage-*` / `muted-blue-*` / `danger-*`** (§11.1). `terracotta` es el único
-  acento interactivo del admin: acción primaria, indicador de ruta activa y foco.
-- **No reintroduzcas `sky`, `emerald` ni `amber` como acentos del admin.** Ya no
-  tienen ningún uso dentro de `src/pages/admin/`. Si los ves ahí, es un bug.
+⚠ **Las reglas que vienen a continuación rigen `src/pages/admin/` Y
+`src/pages/cliente/`.** `/cliente` usa el mismo sistema claro a propósito (§11) y está
+verificado que **no** usa ningún token del tema público (0 coincidencias de
+`sky-*`, `emerald-*`, `neutral-*`, `stone-*`, `zinc-*`, `indigo-*`, `yellow-*`).
+
+⚠ **Excepción en `src/pages/cliente/`: los badges de estado usan la escala por defecto
+de Tailwind, no los tokens del `@theme`.** `estilosEstado` en `CitasCliente.jsx` pinta
+`bg-amber-100 text-amber-800`, `bg-green-100 text-green-800`,
+`bg-slate-200 text-slate-700` y `bg-red-100 text-red-700`; además hay un aviso de
+domingo cerrado en `text-amber-700` y las acciones destructivas en `red-*`. Son
+**shades del Tailwind**, no el token `amber` (`#854D0E`) del panel. Consecuencia visible:
+`confirmada` sale **verde** aquí y **azul** en `CitasAdmin` (§9.7). No lo "normalices" sin
+acordarlo.
+
+- **No reintroduzcas `sky`, `emerald` ni `amber` como acentos de los paneles.** Ya no
+  tienen ningún uso dentro de `src/pages/admin/` ni de `src/pages/cliente/`. Si los ves
+  ahí, es un bug.
 - **No reintroduzcas `ink-*` ni `bone-*` ni `cream-*` ni `coffee-*` en el admin.** Las paletas anteriores fueron completamente reemplazadas. El admin usa el sistema actual (§11).
 - **No reintroduzcas `terracotta-*`, `sage-*`, `muted-blue-*`, `cancelled-*`, `danger-*`.** El esquema anterior se completó; el admin usa el esquema `slate/primary/amber/navy`.
 - **No introduzcas gradients, glow, glassmorphism, sombras fuertes ni pills grandes
@@ -1459,16 +2089,21 @@ pide.
   nodo del rail de `CitasAdmin` (`duration-200` + `motion-reduce:transition-none`).
 
 **Higiene**
-- **No borres los archivos de código muerto** (`Productos.jsx`, `BookingForm.jsx`,
-  `App.css`, `src/assets/*`, `public/icons.svg`) sin preguntar.
-- **No "mejores" los 7 errores de lint preexistentes** dentro de un cambio ajeno, y
-  nunca dejes el total por encima de 7 (§15.1).
+- **No borres los archivos de código muerto** (`BookingForm.jsx`, `App.css`,
+  `src/assets/*`, `public/icons.svg`) sin preguntar. ⚠ `Productos.jsx` **ya no** está
+  en esa lista: se conectó a la landing en 2026-10 (§4).
+- **No "mejores" los 10 errores de lint preexistentes** dentro de un cambio ajeno, y
+  nunca dejes el total por encima de 10 (§15.1).
+- **No borres el `eslint-disable-next-line react-hooks/set-state-in-effect`** de
+  `CitasCliente.jsx`: es lo que evita un error nuevo, no una chapuza.
 - **No ejecutes comandos destructivos de git** sobre el working tree (§15.3).
 - **No toques `.codegraph/`, `.claude/`, `.cursor/`, `.kiro/`, `.vscode/`,
   `.mcp.json`, `opencode.jsonc`** — son configuración de herramientas, incluido el
   bloque `CODEGRAPH_START/END` de este mismo archivo.
 - **No añadas dependencias de red en el build** (fuentes, CDNs, imágenes externas)
-  salvo el placeholder `https://placehold.co/...` que ya se usa.
+  salvo el placeholder `https://placehold.co/...` que ya se usa. ⚠ Excepción
+  preexistente: los dos `<iframe>` de Google Maps de `Contacto.jsx` ya hacen peticiones
+  a google.com/maps desde el navegador.
 
 ---
 
@@ -1481,41 +2116,54 @@ arreglar de paso:**
 |---|---|---|
 | 1 | ~~`BookingPage.jsx:62`~~ | **RESUELTO** (2026-10): la fecha se calcula en hora local con `FechaISO()` y se guarda como `'YYYY-MM-DD'`. |
 | 2 | ~~`BookingPage.jsx:43`~~ | **RESUELTO** (2026-10): se eliminó el estado `addon` y el `+250`. El total es solo el `costo` del servicio y la columna `addon` ya no se envía. |
-| 3 | `Servicios.jsx:70` → `BookingPage` | `?servicio=` se navega pero no se lee (sin `useSearchParams`). |
+| 3 | `Servicios.jsx` → `BookingPage` | Sigue pendiente: `?servicio=` se navega pero no se lee (`BookingPage` no tiene `useSearchParams`, verificado: 0 coincidencias). En 2026-10 la tarjeta pasó a leer de Supabase, pero **sigue** sin preseleccionar el servicio al que se hizo click. |
 | 4 | ~~`BookingPage.jsx:157,169`~~ | **RESUELTO** (2026-10): la tarjeta usa `categoria` (antes `s.etiqueta`), `formatoDuracion(s.duracion)` y `Number(s.costo)`, todo desde la tabla real. |
-| 5 | ~~`BookingPage.jsx`~~ | **RESUELTO** (2026-10): el paso 1 consulta `servicios` (`nombre, categoria, descripcion, costo, duracion, imagen`), con estado de carga y vacío ("Aún no hay servicios disponibles"). |
-| 6 | `citas.servicio` | Sigue siendo texto plano, no FK → se pueden agendar servicios inexistentes desde otras vías. **Lo de la agenda ocupada sí se resolvió**: RPC `horas_ocupadas` + índice único `citas_slot_unico` (§10.5). Lo que **no** hay es un modelo de horarios/slots: las franjas siguen siendo constantes hardcodeadas en `BLOQUES`. |
+| 5 | ~~`BookingPage.jsx`~~ | **RESUELTO** (2026-10): el paso 1 consulta `servicios` (`nombre, categoria, descripcion, costo, duracion, imagen`), con estado de carga y vacío ("Aún no hay servicios disponibles"). El 2026-10-12 se le añadieron `productos` y `barberos` (multi-selección). |
+| 6 | `citas.servicio` + modelo de slots | Sigue siendo texto plano, no FK → se pueden agendar servicios inexistentes desde otras vías. **Lo de la agenda ocupada sí se resolvió**: RPC `horas_ocupadas` + índice único `citas_slot_unico` (§10.5). Lo que **no** hay es un modelo de horarios/slots: `BLOQUES` sigue hardcodeado, el índice no cubre el solapamiento por intervalo y `barbero_id IS NULL` queda fuera de la unicidad. |
 | 7 | ~~`AdminDashboard.jsx:18`~~ | **RESUELTO** (2026-10): el `<aside>` fijo `w-64` pasó a barra superior en `<lg` + rail en `lg+`; además se añadió el menú hamburguesa con `menuAbierto`. Ver §9.1 y §12.1. |
-| 8 | ~~`Navbar.jsx`~~ | **PARCIALMENTE RESUELTO** (2026-10): ya hay menú hamburguesa en `<md` con links, teléfono, sesión y `AGENDAR CITA`. **Sigue pendiente**: los `href="servicios" / productos / contacto` no tienen sección con `id` a la que saltar, así que recargan la ruta en vez de navegar; y el `Escape` solo cierra con el foco dentro del `<nav>` (§12.3). |
-| 9 | Todos los `cargarX()` | El `error` de Supabase se descarta; un fallo de red se ve como "lista vacía". Esto afecta también a los estados vacíos del admin, que son sobrios a propósito para no mentir cuando la petición falló. |
+| 8 | ~~`Navbar.jsx`~~ | **RESUELTO** (2026-10): menú hamburguesa en `<md` con links, teléfono, sesión y `AGENDAR CITA`, y los links son `NavLink` a **rutas reales** (`/servicios`, `/productos`, `/contacto`) que ya existen, con `fin` en Inicio y marca de la ruta actual. **Queda**: el `Escape` solo cierra con el foco dentro del `<nav>` (§12.3) y el panel móvil empuja el contenido en vez de flotar. |
+| 9 | Todos los `cargarX()` | El `error` de Supabase se descarta; un fallo de red se ve como "lista vacía". Esto afecta también a los estados vacíos del admin, que son sobrios a propósito para no mentir cuando la petición falló. **Excepción ya resuelta** en `Servicios.jsx`, `Productos.jsx` (públicos, con botón Reintentar) y `CitasCliente.jsx` (`errorCarga` + `role="alert"`). |
 | 10 | Los tres `*Form` | Mensaje de error único y genérico; nunca se muestra el error real. `guardando` solo se resetea en el `catch`. |
 | 11 | Los tres `*Form` | `URL.createObjectURL` nunca se revoca. |
 | 12 | Deletes | `confirm()` nativo, y el `error` del `delete` no se maneja. |
 | 13 | `*Form` modales | El `<img>` de preview sigue **sin `alt`**. (El `htmlFor` de los labels **ya se resolvió** en el rediseño; sigue sin resolverse el `aria-live` de los errores.) |
-| 14 | `AuthContext` / `ProtejerRuta` | Sin control de roles: cualquier usuario autenticado entra al admin. |
+| 14 | ~~`AuthContext` / `ProtejerRuta`~~ | **RESUELTO** (2026-10-12): existe el sistema de 3 roles. El rol vive en `perfiles` (§10.2), lo escribe un trigger de la BD y **nadie lo cambia desde la app**; `ProtectedRoute` recibe `roles` y manda al inicio propio cuando no encaja (§5); y **RLS** cierra la escritura del panel con `es_admin()` (§10.5). Verificado simulando roles: un cliente no inserta, no actualiza y no borra nada. |
 | 15 | Storage | Los deletes no borran el archivo del bucket → imágenes huérfanas. |
 | 16 | `index.html` | `lang="en"` con UI en español; `<title>` = `barberia` en vez del nombre del negocio. |
 | 17 | Todo el repo | Textos `Lorem ipsum` y placeholders de marca sin sustituir. |
 | 18 | ~~`ResumenPage.jsx:62`~~ | **RESUELTO** en el rediseño: se eliminó el `<p className="text-2xl mb-2">{t.icono}</p>`, que renderizaba vacío porque `tarjetas` nunca define `icono`. |
-| 19 | `BookingPage.jsx:32` | Inconsistencia de formato de hora: `'18:30 PM'` (PM con hora de 24h); el resto usa `'10:00 AM'`, `'11:50 AM'`, `'12:40 PM'`. |
+| 19 | ~~`BookingPage.jsx:32`~~ | **RESUELTO** (2026-10): `BLOQUES` usa `'18:30'` en 24 h y el AM/PM sale solo de `formato12h()`. |
 | 20 | `src/index.css` (`@theme`) | **RESUELTO** en el rediseño: se añadió `danger-400` (`#C04A3A`) para acciones destructivas, separando del estado `cancelada` (`cancelled-400`). |
-| 21 | `LoginPage.jsx` | Mantiene el tema anterior (`neutral-*`) mientras el admin usa `slate/primary/navy`. Los inputs se ven distintos al entrar al panel. Costura conocida del rediseño, documentada en §11. |
+| 21 | `LoginPage.jsx` | Mantiene el tema anterior (`neutral-*`) mientras los dos paneles usan `slate/primary/navy`. Los inputs se ven distintos al entrar al panel. Costura conocida del rediseño, documentada en §11. |
 | 22 | ~~`BookingPage` vs `CitasAdmin`~~ | **RESUELTO**: la nueva tabla de citas usa `font-serif` + `tabular-nums` en la columna de hora, igual que el wizard público. |
 | 23 | ~~`BookingPage.handleConfirmar`~~ | **RESUELTO** (2026-10): se manda `hora` en 24 h (`'HH:MM'`), que sí castea a `time`. El agendamiento público volvió a funcionar. |
 | 24 | `citas` (modelo) | No hay columnas de pago. El botón "Cobrar" de `CitasAdmin` cierra la cita como `completada`; un registro real de cobro necesita `pagado`/`metodo_pago`/`cobrado_at`. |
 | 25 | ~~sillones~~ | **DESCARTADO por el usuario**: `barberos.sillon_numero` / `sillon_nombre` existen en la BD pero `CitasAdmin` no los usa (ni badge, ni tarjeta, ni columna, ni % de ocupación). La gestión de sillones quedó en la página de Barberos, si es que algún día se retoma. |
 | 26 | `CitasAdmin` — vista calendario | Placeholder navegable. Falta el modelo de horarios/slots y la detección de solapamientos (sigue sin haber forma de impedir dos citas en el mismo horario, §18.6). |
 | 27 | `CitasAdmin` — recordatorios | Tarjeta estática con botones deshabilitados. Falta proveedor de mensajería, Edge Function con las plantillas y la regla de disparo (H-24 / H-2). |
-| 28 | `citas.barbero_id` | Existe en la BD, pero **las 4 filas actuales lo tienen en `null`**, así que la columna Barbero sale en "Sin asignar" hasta que se asigne desde "Reprogramar" o desde el alta manual. |
+| 28 | `citas.barbero_id` | Existe en la BD y `BookingPage` **ya lo rellena** (RPC `asignar_barbero` cuando el cliente elige "Cualquier barbero"), pero de las 20 filas actuales **15 lo siguen teniendo en `null`**: son las creadas antes de la auto-asignación y las del alta manual. La columna Barbero sale en "Sin asignar" para esas. |
 | 29 | `citas` (RLS) | **RESUELTO**: se agregó la política `Admin escribe` para `authenticated` (§10.5). Antes toda escritura del panel sobre `citas` fallaba en silencio. |
 | 30 | `CitasAdmin` — tag VIP | No existe el criterio para "Club Noble" ni ningún campo VIP en `citas`. Omitido a propósito; no lo inventes. |
-| 31 | ~~Tokens del tema viejo en el admin~~ | **RESUELTO**: `src/pages/admin/` ya no usa ninguna clase `cream-*`, `coffee-*`, `terracotta-*`, `danger-*`, `ink-*`, `bone-*`, `brass-*`, `sage-*`, `muted-blue-*` ni `cancelled-*`. Los cuatro formularios están en tema claro (§9.4). Verificado con grep sobre el prefijo de clase real, no por substring (`shrink-` y `message-` dan falsos positivos con `ink-`/`sage-`). |
+| 31 | ~~Tokens del tema viejo en el admin~~ | **RESUELTO**: `src/pages/admin/` ya no usa ninguna clase `cream-*`, `coffee-*`, `terracotta-*`, `danger-*`, `ink-*`, `bone-*`, `brass-*`, `sage-*`, `muted-blue-*` ni `cancelled-*`. Los cuatro formularios están en tema claro (§9.4). `src/pages/cliente/` tampoco usa tokens del tema público (§17). |
 | 32 | `servicios.duracion` | Es TEXT y no tiene CHECK: conviven `'30'` (dato actual) y textos tipo `'50 min'`. `ServiciosAdmin.aMinutos()` normaliza para promediar y mostrar, y el formulario ya guarda minutos pelados (`type="number"`). El `servicio.costo` es `numeric`, no `precio` como en productos. |
 | 33 | `servicios.descripcion` | La fila "Corte de Cabello" la tiene vacía. La tabla muestra "Sin descripción" en `slate-400` en vez de una celda en blanco que parece un bug. |
 | 34 | `BarberosAdmin.CAPACIDAD_SLOTS_ESTIMADA` | Es una constante inventada (`= 8`) para "slots por barbero por día". Alimenta la métrica "Capacidad operativa" y la barra de citas de hoy de cada tarjeta. Está marcada como dato de ejemplo en el código; hace falta un modelo real de horarios/slots para que el número signifique algo. |
 | 35 | `ResumenPage.getAccentBarbero(i)` | Muestra **"Barbero N°{i + 1}"** inventado por índice de fila en la tabla de citas de hoy, y un color por posición. No lee `citas.barbero_id` aunque la columna exista. En un panel con datos reales eso es un dato falso, no un placeholder. |
 | 36 | `ProductosAdmin` — ícono "Ver" y "Contactar proveedor →" | Botones sin `onClick` y un `<a href="#">`. Son controles muertos: el mismo problema que se resolvió en `ServiciosAdmin` (donde "Ver" abre el form en `soloLectura`). |
-| 37 | `citas.estado` (datos) | Hay una fila con `estado = 'Pendiente'` (mayúscula) creada fuera de la app. El `estado` es `text` libre, sin CHECK ni ENUM, y el admin compara `estado \|\| 'pendiente'` **de forma sensible a mayúsculas**: `CitasAdmin.accionesDe()` cae en `default` y esa fila se queda **sin botones de acción**. El índice `citas_slot_unico` y el RPC sí la tratan bien, pero la UI no. **Normaliza el dato** (`update citas set estado = 'pendiente' where estado = 'Pendiente'`) o mete un CHECK; no lo cambies sin avisar. |
+| 37 | `citas.estado` (datos) | Sigue habiendo **1 fila con `estado = 'Pendiente'`** (mayúscula) creada fuera de la app (verificado 2026-10-12). El `estado` es `text` libre, sin CHECK ni ENUM, y el admin compara `estado \|\| 'pendiente'` **de forma sensible a mayúsculas**: `CitasAdmin.accionesDe()` cae en `default` y esa fila se queda **sin botones de acción**. ⚠ Con el portal del cliente el efecto es doble: `CitasCliente` solo considera `pendiente`/`confirmada` en minúsculas, así que esa cita cae en **Historial**, y las RPC `cancelar_cita`/`reagendar_cita` rechazan la fila porque su `estado in ('pendiente','confirmada')` no matchea. **Normaliza el dato** (`update citas set estado = 'pendiente' where estado = 'Pendiente'`) o mete un CHECK; no lo cambies sin avisar. |
+| 38 | ~~`Navbar` — botón de cuenta~~ | **RESUELTO** (2026-10-12): `Navbar`, `Hero` y `LoginPage` usan ahora el helper único `rutaInicioPorRol(rol)` (§5) en vez de decidir el destino por su cuenta, y el rol viene de `perfiles`. Queda **0** lecturas de `user_metadata.role` en `src/`. |
+| 39 | ~~Seguridad: `signUp` público + `role` del cliente~~ | **RESUELTO** (2026-10-12): `LoginPage` ya **no manda `role`**, solo `full_name`. El alta la hace `trg_crear_perfil`, función `security definer` que inserta **siempre `'cliente'`** e **ignora `user_metadata`** a propósito (§10.6). Y `perfiles` no tiene política de INSERT ni de UPDATE, así que nadie puede auto-asignarse un rol ni desde la API. |
+| 40 | `BookingPage` — numeración de pasos | El stepper tiene 3 pasos (`PASOS`) pero los rótulos visibles van de "01" a "04" porque el bloque de barberos comparte pantalla con el paso 1. Confuso al leer la pantalla; puramente cosmético. |
+| 41 | `citas.cliente_id` sin FK ni trigger | La columna es `uuid` nullable y **no** referencia `auth.users`: nada impide apuntar a un id inexistente y **borrar la cuenta de un cliente deja sus citas huérfanas** para siempre. Además 16 de las 20 filas actuales la tienen en `null`, así que esas reservas no aparecen en `/cliente` y el cliente no puede cancelarlas. Una FK a `auth.users` con `ON DELETE SET NULL` (o `CASCADE`) resolvería la mitad; la otra mitad es un backfill de datos. |
+| 42 | `BLOQUES` duplicado | La lista de horarios está **copiada** en `BookingPage.jsx` y en `CitasCliente.jsx` (que la necesita para el modal de reagendar). Si cambias el horario del salón en uno, tienes que cambiarlo en el otro o el cliente podrá reagendar a horas que `/agendar` nunca ofrece. El arreglo real es una tabla `horarios` + RPC, no un constant compartido (§18.6). |
+| 43 | `CitasAdmin` no muestra `cliente_id` | `cargarDatos` hace `select('*')`, así que el dato **llega**, pero ninguna columna lo usa: la celda "Cliente" muestra `nombre` y `telefono`. Con el portal `/cliente` ya existe la relación y sería el filtro más útil ("citas sin cliente" = reservas hechas antes de exigir sesión). |
+| 44 | `/login` — confirmación de email | No se puede verificar desde el código si el proyecto de Supabase exige confirmar el correo: si lo exige, el registro nuevo muestra "¡Cuenta creada!" pero el usuario **no puede entrar** hasta confirmar, y `/agendar` habrá perdido el borrador si tarda más de 2 h (§8). Única duda pendiente de revisar en el panel de Supabase. |
+| 45 | **Esquema aplicado fuera de las migraciones** | `list_migrations` devuelve 9 entradas y la última es `cita_productos_jsonb` (2026-10-06). La columna `citas.cliente_id`, la política `cliente ve sus citas` y las funciones `cancelar_cita` / `reagendar_cita` **no tienen entrada**: se aplicaron directamente en la BD. Si alguien reconstruye el proyecto desde cero (o cambia de proyecto de Supabase), esa parte se pierde en silencio y `/cliente` devuelve listas vacías sin error visible. **Conviene una migración que documente/recree el estado actual.** |
+| 46 | `citas_slot_unico` no cubre `barbero_id IS NULL` | El índice único exige `barbero_id is not null`, así que **dos citas sin barbero sí pueden caer en el mismo horario**. Es raro en el flujo público (auto-asignación), pero `CitaManualForm` y el `BookingForm.jsx` muerto permiten dar de alta sin barbero, y hoy 15 de las 20 filas están así. |
+| 47 | `/contacto` con datos vacíos | Las dos sedes tienen `nombre`, `direccion`, `horarios`, `telefono` y `mapQuery` **en blanco**, así que los `<iframe>` piden `?q=&output=embed` y muestran el mapa equivocado (o nada). Además `s.horarios.map(h => …)` sobre `['']` renderiza una línea vacía. |
+| 48 | ARIA inconsistente en el portal del cliente | Los tabs de `CitasCliente` son un `role="tablist"` con `role="tab"` + `aria-selected` **sin `tabpanel`**, exactamente el patrón que `CitasAdmin` evita a propósito con `role="group"` + `aria-pressed`. Además el modal de confirmación de `BookingPage` no tiene `role="dialog"`. No son bugs de runtime, pero rompen la consistencia del proyecto. |
+| 49 | **El rol `admin` no tiene ninguna cuenta** | Verificado 2026-10-12: `perfiles` tiene **1 `superadmin`** (que además es el admin del negocio) y **4 `cliente`**, **0 `admin`**. El rol existe en el `CHECK`, en `rutaInicioPorRol` y en `es_admin()`, pero nadie lo usa: el flujo real es "superadmin entra a `/admin`". Si mañana el dueño de la barbería es otra persona, promote con `update perfiles set rol = 'admin'` (§10.6) y ya funciona sin tocar código. |
+| 50 | **Cambio de cuenta sin refrescar `rol` a tiempo** | `LoginPage` no navega dentro de `handleSubmit`: marca `entrado` y espera a que `cargandoRol` sea `false` en un efecto, porque el rol se lee de la BD justo después de iniciar sesión. Consecuencia: si alguien cierra sesión y entra con otra cuenta muy rápido, el `rol` puede ser el de la sesión anterior durante un instante. `ProtectedRoute` lo absorbe (`Cargando...`), pero **si añades una pantalla que lea `rol` fuera del guard, comprueba también `cargandoRol`**. |
 
 ---
 

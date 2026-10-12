@@ -1,13 +1,13 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { rutaInicioPorRol } from '../utils/rutaInicioPorRol'
 
 export default function Hero() {
   const navigate = useNavigate()
-  const { session } = useAuth()
+  const { session, rol } = useAuth()
 
-  // Mismo criterio que el Navbar: admin al panel de admin, cliente a su dashboard.
+  // Mismo criterio que el Navbar y el login, vía el helper compartido.
   const user = session?.user
-  const userRole = user?.user_metadata?.role || user?.role
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Mi cuenta'
 
   const irAServicios = () => {
@@ -17,10 +17,8 @@ export default function Hero() {
   const handleCuenta = () => {
     if (!session) {
       navigate('/login')
-    } else if (userRole === 'admin') {
-      navigate('/admin')
     } else {
-      navigate('/cliente')
+      navigate(rutaInicioPorRol(rol))
     }
   }
 

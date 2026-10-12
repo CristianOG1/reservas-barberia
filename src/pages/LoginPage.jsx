@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../supabaseClient'
+import { rutaInicioPorRol } from '../utils/rutaInicioPorRol'
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const { login, rol, cargandoRol } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   // Si venimos de /agendar sin sesión, `volverA` dice a dónde regresar tras entrar.
@@ -17,6 +18,15 @@ export default function LoginPage() {
   const [error, setError] = useState(null)
   const [mensaje, setMensaje] = useState(null)
   const [cargando, setCargando] = useState(false)
+  // Marca "ya entraste, espera al rol para decidir a dónde vas".
+  const [entrado, setEntrado] = useState(false)
+
+  // El rol se lee de `perfiles` justo después de iniciar sesión, así que puede
+  // llegar un instante después que la sesión. Se redirige cuando ya se sabe.
+  useEffect(() => {
+    if (!entrado || cargandoRol) return
+    navigate(volverA || rutaInicioPorRol(rol), { replace: true })
+  }, [entrado, cargandoRol, rol, volverA, navigate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -25,14 +35,16 @@ export default function LoginPage() {
     setMensaje(null)
 
     if (esRegistro) {
-      // Registrar nuevo usuario en Supabase
+      // Registrar nuevo usuario en Supabase.
+      // Solo `full_name`: el rol NO se envía. Lo decide el trigger de la base de
+      // datos, que siempre crea el perfil como 'cliente'. Mandarlo aquí
+      // permitiría auto-asignarse 'admin'.
       const { error: registerError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
-            full_name: nombre,
-            role: 'cliente' // Por defecto se registra como cliente
+            full_name: nombre
           }
         }
       })
@@ -46,22 +58,15 @@ export default function LoginPage() {
       setCargando(false)
     } else {
       // Iniciar sesión
-      const { data, error: loginError } = await login(email, password)
+      const { error: loginError } = await login(email, password)
 
       if (loginError) {
         setError('Correo o contraseña incorrectos.')
         setCargando(false)
       } else {
-        const user = data?.user || data?.session?.user
-        const role = user?.user_metadata?.role || user?.role
-
-        if (volverA) {
-          navigate(volverA)
-        } else if (role === 'admin') {
-          navigate('/admin')
-        } else {
-          navigate('/')
-        }
+        // No se navega aquí: la redirección espera al rol (efecto de arriba).
+        setCargando(false)
+        setEntrado(true)
       }
     }
   }

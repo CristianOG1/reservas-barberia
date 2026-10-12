@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { rutaInicioPorRol } from '../utils/rutaInicioPorRol'
 
 // Íconos del menú móvil. SVG inline: el proyecto no usa librerías de iconos.
 function IconoHamburguesa() {
@@ -31,11 +32,10 @@ const enlaces = [
 
 export default function Navbar() {
   const navigate = useNavigate()
-  const { session, logout } = useAuth()
+  const { session, logout, rol } = useAuth()
 
   // Extraemos datos del usuario si existe sesión
   const user = session?.user
-  const userRole = user?.user_metadata?.role || user?.role
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Mi Cuenta'
 
   // Menú desplegable en celulares; en md+ queda oculto y no se monta nada.
@@ -43,19 +43,14 @@ export default function Navbar() {
 
   const cerrarMenu = () => setMenuAbierto(false)
 
+  // El destino lo decide `rutaInicioPorRol`, no el rol leído aquí.
   const handleAuthClick = () => {
     cerrarMenu()
     if (!session) {
       navigate('/login')
       return
     }
-
-    if (userRole === 'admin') {
-      navigate('/admin')
-    } else {
-      // Redirige al Dashboard del cliente
-      navigate('/cliente')
-    }
+    navigate(rutaInicioPorRol(rol))
   }
 
   const irA = (destino) => () => {

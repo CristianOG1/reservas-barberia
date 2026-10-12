@@ -1,7 +1,3 @@
-// src/context/ConfiguracionProvider.jsx
-// Provider de los datos de la barbería. Carga la fila única (id = 1) UNA vez y la
-// comparte con el sidebar y con la página de configuración, de modo que guardar
-// en la página actualice el nombre y el logo del panel sin recargar.
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { ConfiguracionContext } from './configuracion'
