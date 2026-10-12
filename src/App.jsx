@@ -49,12 +49,14 @@ function LayoutPublico() {
 function App() {
   return (
     <Routes>
-      {/* Fuera del layout público: login y todo el panel, sin Navbar. */}
+      {/* Fuera del layout público: login y todo el panel, sin Navbar.
+          `roles` en cada zona: el guard manda al inicio propio si el rol no
+          corresponde (cliente en /admin → /cliente, admin en /cliente → /admin). */}
       <Route path="/login" element={<LoginPage />} />
       <Route
         path="/admin"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute roles={['admin', 'superadmin']}>
             {/* El provider envuelve todo el layout del admin: el sidebar y la
                 página de configuración leen la misma fila. */}
             <ConfiguracionProvider>
@@ -91,17 +93,17 @@ function App() {
       </Route>
 
       <Route
-  path="/cliente"
-  element={
-    <ProtectedRoute>
-      <ConfiguracionProvider>
-        <ClienteDashboard />
-      </ConfiguracionProvider>
-    </ProtectedRoute>
-  }
->
-  <Route index element={<CitasCliente />} />
-</Route>
+        path="/cliente"
+        element={
+          <ProtectedRoute roles={['cliente']}>
+            <ConfiguracionProvider>
+              <ClienteDashboard />
+            </ConfiguracionProvider>
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<CitasCliente />} />
+      </Route>
 
     </Routes>
   )
