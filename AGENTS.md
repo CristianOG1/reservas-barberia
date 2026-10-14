@@ -173,6 +173,13 @@ sesión.
 barberia/
 ├── .claude/ .cursor/ .kiro/ .vscode/   config de editores/agentes (solo MCP de codegraph)
 ├── .codegraph/                         índice de CodeGraph (ignorado por git)
+├── supabase/
+│   └── functions/
+│       └── enviar-recordatorios/
+│           └── index.ts               Edge Function de recordatorios (§10.7).
+│                                       **Único código fuera de `src/`.** Sin
+│                                       secretos: los lee del entorno. Se despliega
+│                                       con el MCP, no con la CLI.
 ├── public/
 │   ├── barber.jpg                      2.2 MB — imagen del hero
 │   ├── favicon.svg
@@ -972,6 +979,71 @@ resolviendo el servicio contra el catálogo, no leyendo el sillón del barbero.
 - El reloj se congela con `const [reloj] = useState(() => new Date())`: llamar a
   `Date.now()` en el cuerpo del render dispara `react-hooks/purity`.
 
+#### Recordatorios manuales por WhatsApp (2026-10-13)
+
+El barbero puede **recordar una cita** desde la propia tabla o desde la tarjeta del
+panel inferior. Es **manual**: abre WhatsApp con el mensaje escrito y marca la cita.
+
+- **`esRecordable(cita)`** decide si el botón aparece: solo `pendiente` o
+  `confirmada`, y fecha de hoy o posterior. Para las de hoy exige además que la hora no
+  sea anterior a `ahoraMin` (una cita de las 10:00 ya no se recuerda a las 13:00).
+- **`telefonoParaWhatsApp(telefono)`** normaliza a lo que wa.me pide: solo dígitos y con
+  código de país. Quita en este orden el prefijo internacional `00`, la larga nacional
+  `044`, el `52` y el `1` de móvil internacional, y luego **antepone `CODIGO_PAIS = '52'`
+  si quedan 10 dígitos**. Si no queda con 10 ni 11 dígitos, devuelve `{ numero: '',
+  motivo }` y el botón sale **deshabilitado** con ese motivo en el `title` y en el
+  `aria-label`. Verificado contra 12 casos reales (`+52 1 55…`, `044…`, `0052…`,
+  `1 55…`, `abc`, vacío): todos dan el número correcto o se deshabilitan.
+- **`mensajeRecordatorio(cita, nombreNegocio)`** arma el texto con `etiquetaFecha()` y
+  `formatearHora()` (12 h), y el nombre del negocio sale de `useConfiguracion()` —la
+  misma fila que el sidebar—, con `'Barbería'` como respaldo si está vacía.
+- **`recordarCita(cita)`** abre `https://wa.me/<numero>?text=<encodeURIComponent>` con
+  `window.open(..., '_blank', 'noopener,noreferrer')` y **después** escribe
+  `recordatorio_enviado_at`. Ese orden es deliberado: **WhatsApp se abre aunque el
+  `update` falle**, y el banner `role="alert"` solo informa de que la cita no quedó
+  marcada. En el éxito actualiza la fila en pantalla con `setCitas(prev => …)`.
+- Las citas ya recordadas muestran la etiqueta **"Recordada"** en la celda del cliente
+  (texto `text-[10px] uppercase tracking-wide text-amber`, sin pill) y el botón pasa a
+  **"Recordar de nuevo"** en ambos sitios.
+- La tarjeta del panel inferior ya **no es estática**: lista `paraRecordar` (mañana
+  entero + las de hoy que no han pasado, ordenadas por fecha y hora) con hora, nombre y
+  su botón. Si no hay ninguna, muestra "No hay citas por recordar".
+- `IconoWhatsApp()` es un SVG inline de trazo, como el resto del set de iconos.
+
+#### Envío automático por correo: H-24 y H-2 (2026-10-13)
+
+Hay **dos canales de recordatorio y son independientes**. El manual de arriba no se
+sustituyó: pasó a ser el respaldo cuando el automático no llega.
+
+| Canal | Quién lo dispara | Columna que marca |
+|---|---|---|
+| Manual (WhatsApp) | El barbero, pulsando "Recordar" | `recordatorio_enviado_at` |
+| Automático (correo) | `pg_cron` → Edge Function `enviar-recordatorios` → Resend | `recordatorio_24h_enviado_at` y `recordatorio_2h_enviado_at` |
+
+Enviar por un canal **no silencia** al otro: cada columna filtra solo su propia ventana.
+La lógica completa está en §10.7.
+
+En `CitasAdmin.jsx`:
+
+- **`alternarEnvioAutomatico()`** escribe `configuracion.recordatorios_activos` y
+  **revisa el `error`** a propósito. Es el único control que puede parar el envío
+  automático desde el panel, y un `UPDATE` que afecta 0 filas por RLS no lanza error:
+  sin esa revisión, el interruptor mentiría.
+- El interruptor es el **mismo control que `BarberosAdmin` y `BarberoForm`** (§9.3,
+  §9.4): `<button type="button" role="switch" aria-checked>`, pista
+  `relative inline-flex h-5 w-9 rounded-full` (`bg-slate-300` / `bg-primary`) y knob
+  `h-3.5 w-3.5 rounded-full bg-white` que viaja con `translate-x-1` / `translate-x-4`.
+  La etiqueta visible "Envío automático" hace de nombre accesible. No hay animación nueva:
+  solo el `transition-colors` que ya usa todo el admin.
+- **`MarcasCorreo({ cita })`** muestra **"24 h enviado"** y/o **"2 h enviado"** según las
+  columnas, en `text-[10px] uppercase tracking-wide text-slate`, **sin pill** (§11.4). Si
+  no se envió ninguno no renderiza nada. Sale en la celda del cliente de la tabla y en la
+  tarjeta del panel inferior, con la fecha real en el `title`.
+- **`formatRecordatorio(iso)`** formatea el `timestamptz` de la marca para ese `title`.
+- Se **eliminaron** los botones "Ver Plantillas", "Enviar Ahora" y la leyenda
+  "Próximamente": describían una funcionalidad que ya no es la de esa tarjeta. El envío
+  masivo sigue sin existir (ver abajo), pero ahora es un caso particular del automático.
+
 #### Lo que es UI pendiente de lógica
 
 Marcado con `PENDIENTE` en el código, no lo tomes por implementado:
@@ -979,12 +1051,8 @@ Marcado con `PENDIENTE` en el código, no lo tomes por implementado:
 - **Vista Calendario**: la pestaña del toggle es navegable y muestra un placeholder con
   las 3 piezas que faltan (franjas por hora, bloqueos, aviso de solapamiento). No hay
   modelo de horarios.
-- **Recordatorios WhatsApp**: tarjeta estática, botones **deshabilitados** a propósito
-  (no fingen mandar nada). El título de la tarjeta pasó de "Recordatorios SMS /
-  WhatsApp" a **"Recordatorios via WhatsApp"** (único cambio de texto del pull
-  `853ca9f..8809213`); el **comentario** de sección sobre el bloque sigue diciendo
-  "5.2 Recordatorios SMS / WhatsApp", así que no está sincronizado. Falta proveedor +
-  Edge Function + regla de disparo.
+- **Envío masivo**: no hay forma de lanzar los recordatorios a mano desde el panel (ni de
+  reenviar a un subconjunto). Lo único manual sigue siendo el WhatsApp uno por uno.
 - **Cobrar**: ver arriba.
 - **Tag "Club Noble" (VIP)**: omitido a propósito, no hay ningún criterio real en el
   modelo que lo sostenga. No lo inventes sin hablarlo.
@@ -1079,11 +1147,11 @@ verificado por MCP (2026-10), columna por columna:
 
 | Tabla | Columnas reales | Notas |
 |---|---|---|
-| `citas` | `id uuid PK`, `nombre text NOT NULL`, `telefono text NOT NULL`, `servicio text NOT NULL`, `fecha date NOT NULL`, `hora time NOT NULL`, `estado text NULL DEFAULT 'pendiente'`, `created_at timestamp NULL DEFAULT now()`, `correo text`, `notas text`, `addon boolean NULL DEFAULT false`, `total numeric`, `barbero_id uuid`, `productos jsonb NOT NULL DEFAULT '[]'`, `cliente_id uuid` | la **única FK** es `citas_barbero_id_fkey` → `barberos(id)` con **`ON DELETE SET NULL`**. `cliente_id` **no tiene FK ni trigger**: apunta a `auth.users` por convención |
+| `citas` | `id uuid PK`, `nombre text NOT NULL`, `telefono text NOT NULL`, `servicio text NOT NULL`, `fecha date NOT NULL`, `hora time NOT NULL`, `estado text NULL DEFAULT 'pendiente'`, `created_at timestamp NULL DEFAULT now()`, `correo text`, `notas text`, `addon boolean NULL DEFAULT false`, `total numeric`, `barbero_id uuid`, `productos jsonb NOT NULL DEFAULT '[]'`, `cliente_id uuid`, `recordatorio_enviado_at timestamptz NULL`, **`recordatorio_24h_enviado_at timestamptz NULL`**, **`recordatorio_2h_enviado_at timestamptz NULL`** | la **única FK** es `citas_barbero_id_fkey` → `barberos(id)` con **`ON DELETE SET NULL`**. `cliente_id` **no tiene FK ni trigger**: apunta a `auth.users` por convención. Las **3 columnas `recordatorio_*`** son marcas, **no** estados: la del WhatsApp la escribe el panel (§9.5), las otras dos la Edge Function (§10.7) |
 | `servicios` | `id`, `nombre`, `categoria`, `descripcion`, `costo numeric`, `duracion text`, `imagen`, `created_at` | `duracion` es TEXT sin CHECK |
 | `productos` | `id`, `nombre`, `descripcion`, `categoria NOT NULL`, `precio numeric NOT NULL`, `imagen`, `created_at`, **`stock integer`** | `stock` solo lo lee `ProductosPage`; ni el admin ni `BookingPage` lo tocan |
 | `barberos` | `id`, `nombre`, `especialidad`, `disponible boolean NULL DEFAULT true`, `imagen`, `created_at`, **`rating numeric DEFAULT 0`**, **`total_resenas integer DEFAULT 0`**, `sillon_numero integer`, `sillon_nombre text` | `rating`/`total_resenas` los usa `BarberosAdmin`; `sillon_*` no los usa nadie (§18.25) |
-| `configuracion` | `id integer PK`, `nombre text NOT NULL`, `estado text`, `municipio text`, `logo text`, `descripcion text`, `updated_at timestamptz` | **una sola fila** (`id = 1`), verificada: hay 1. La usan `AdminDashboard`, `ClienteDashboard`, `ConfiguracionAdmin` y el provider |
+| `configuracion` | `id integer PK`, `nombre text NOT NULL`, `estado text`, `municipio text`, `logo text`, `descripcion text`, `updated_at timestamptz`, **`recordatorios_activos boolean NOT NULL DEFAULT false`** | **una sola fila** (`id = 1`), verificada: hay 1. La usan `AdminDashboard`, `ClienteDashboard`, `ConfiguracionAdmin` y el provider. **`recordatorios_activos` es el interruptor maestro del envío automático** (§10.7): su escritura no necesitó política nueva, la cubre `Admin actualiza` |
 | **`perfiles`** | `id uuid PK → auth.users(id) ON DELETE CASCADE`, `rol text NOT NULL DEFAULT 'cliente'` con **`check (rol in ('superadmin','admin','cliente'))`**, `nombre text`, `created_at timestamptz NOT NULL DEFAULT now()` | **Fuente de verdad del rol.** La app solo hace SELECT; el INSERT lo hace el trigger `trg_crear_perfil` de `auth.users` (§10.6) |
 
 ⚠ **Inconsistencia real a respetar:** `servicios` usa la columna **`costo`** y
@@ -1365,6 +1433,207 @@ entonces **dos clientes sí pueden caer en el mismo horario**. De las 20 filas a
 citas 'pendiente') porque Postgres no puede crear el índice con el conflicto. **No se
 borró**: la fila sigue existiendo con `estado = 'cancelada'`. Cualquier intento de
 recrear el índice con datos duplicados fallará otra vez.
+
+### 10.7 Envío automático de recordatorios (Edge Function + `pg_cron`)
+
+Única parte del proyecto que corre **fuera de `src/`**: el código vive en
+`supabase/functions/enviar-recordatorios/index.ts` (versionado en el repo, sin secretos) y
+está **desplegado** en Supabase. Todo lo demás quedó en 3 migraciones, así que no quedó
+fuera del historial.
+
+```sql
+-- cita_recordatorios_automaticos: 2 columnas en citas (nullable, sin default)
+-- configuracion_recordatorios_activos: 1 booleano con default false
+-- cron_recordatorios: pg_cron + pg_net + secreto en Vault + 2 RPC + el job
+```
+
+**Extensiones:** `pg_cron` y `pg_net` se activaron en `cron_recordatorios`
+(`create extension if not exists`). `supabase_vault` ya estaba.
+
+#### El job de `pg_cron`
+
+```sql
+select cron.schedule('enviar-recordatorios', '5 * * * *', $$
+  select net.http_post(
+    url     := 'https://<project-ref>.supabase.co/functions/v1/enviar-recordatorios',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'apikey', '<anon key pública>',
+      'Authorization', 'Bearer <anon key pública>',
+      'x-recordatorios-secreto',
+        (select decrypted_secret from vault.decrypted_secrets
+          where name = 'recordatorios_secreto')
+    ),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 55000);
+$$);
+```
+
+- Correr **cada hora en el minuto 5**, no en el 0: evita coincidir con el resto de
+  tareas de cron de la plataforma.
+- El **secreto se lee de Vault dentro del comando**, no está escrito en él. Se generó
+  con `gen_random_bytes(24)` y **nunca sale de la base**.
+- La `apikey` que viaja es la **legacy `anon`**, que es pública (ya está en el bundle del
+  frontend). No es un secreto: solo hace pasar el JWT del gateway. La autorización real
+  es el header `x-recordatorios-secreto`.
+- La migración hace `cron.unschedule` del job homónimo antes de crearlo: es idempotente.
+
+#### Las 2 RPC (`service_role` únicamente)
+
+Ambas son `security definer` + `set search_path = ''`, con `revoke all from public` y
+`grant execute to service_role`. ⚠ **Pero eso NO las deja solo para `service_role`**: ver
+la advertencia inmediatamente debajo.
+
+- **`recordatorios_secreto_valido(p_secreto text) → boolean`**: compara el header con el
+  secreto de Vault. Es `security definer` porque una Edge Function llega por JWT y su
+  rol no puede leer `vault.decrypted_secrets` directamente.
+- **`recordatorios_citas_pendientes(p_desde, p_hasta, p_columna_marca, p_maximo)`**:
+  devuelve las citas de la ventana `[p_desde, p_hasta]` cuya marca sigue en `NULL`, con
+  el nombre del barbero (`left join barberos`). Filtra con
+  `coalesce(lower(estado),'pendiente') in ('pendiente','confirmada')` — el `lower` es
+  necesario por la fila con `'Pendiente'` en mayúscula (§18.37). Compara
+  `(fecha::text || ' ' || left(hora::text, 8))` como **texto local sin zona**, que es lo
+  que la función envía. `p_columna_marca` tiene **lista blanca** (`case` con los 2
+  nombres): no se interpola en SQL, pero evita que alguien pase cualquier columna.
+
+⚠ **`revoke all from public` NO alcanza** para dejar una función cerrada: Supabase tiene
+un `alter default privileges` que concede `execute` a `anon`, `authenticated` y
+`service_role` en el esquema `public`. El `proacl` llegó a mostrar
+`anon=X,authenticated=X,service_role=X`. Eso no es teórico:
+`recordatorios_citas_pendientes` devuelve **nombre, correo y teléfono**, así que leerla
+desde el navegador con la clave pública **saltaba por completo la RLS de `citas`**
+(`cliente ve sus citas`, que es lo que impide ver las citas de otros).
+
+✅ **Corregido en la migración `rpc_recordatorios_solo_service_role`**, que hace
+`revoke execute … from anon, authenticated, public` y vuelve a dar `execute` solo a
+`service_role`. `proacl` verificado: `{postgres=X/postgres,service_role=X/postgres}`. Y
+verificado que un `anon` recibe **`permission denied for function
+recordatorios_citas_pendientes`**.
+
+⚠ **Lección para cualquier RPC nueva**: `revoke all from public` **más** un `grant` a
+`service_role` **no** es suficiente. Hay que revocar de `anon` y `authenticated`
+explícitamente, o la función queda pública para cualquiera con la clave del frontend.
+
+#### La Edge Function
+
+`supabase/functions/enviar-recordatorios/index.ts`. Reglas, en orden de ejecución:
+
+1. **Solo `POST`** y con el secreto válido; si no, `401`. Si la RPC falla se responde
+   `401` también: se prefiere **no enviar** antes que abrir la puerta, y no se pierde nada
+   porque las columnas siguen en `NULL` y el cron reintenta a la hora siguiente.
+2. **Interruptor**: lee `configuracion.recordatorios_activos`. Si es `false`, responde
+   `200 {enviados: 0, motivo: 'interruptor apagado'}` sin hacer nada más.
+3. **Ventanas** en `TZ = 'America/Mexico_City'`: H-24 = `[ahora+23h, ahora+24h]`, H-2 =
+   `[ahora+1h, ahora+2h]`. Toda la aritmética es local, sin zona, porque `fecha` es
+   `date` y `hora` es `time`. **Cada ventana usa MIN y MAX**: son de 1 h de ancho.
+4. **Envío** con Resend (`POST https://api.resend.com/emails`). Solo marca la columna si
+   la respuesta fue **2xx**: si Resend falla, se reintenta en la próxima hora.
+5. **Límite de 80** correos por ejecución (el plan gratis de Resend son 100/día). Lo que
+   no cabe va a `resumen.saltados` y se registra en el log.
+6. Las citas **sin `correo` se saltan** (van a `resumen.sinCorreo`): no hay a quién
+   escribirlas.
+
+⚠ **La variable de entorno es `SUPABASE_URL`, NO `SUPABASE_API_URL`.** El runtime solo
+inyecta `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+`SUPABASE_PUBLISHABLE_KEYS`, `SUPABASE_DB_URL`, `SUPABASE_JWKS`, `SB_EXECUTION_ID`,
+`SB_REGION`, `SUPABASE_FUNCTION_SLUG`. Con `SUPABASE_API_URL` el `createClient` revienta
+al arrancar y la función responde `500 WORKER_ERROR`. Verificado empíricamente.
+
+⚠ **Error real del despliegue con MCP**: el `deploy_edge_function` **reutiliza el
+`import_map_path` de la versión anterior**, y si en esa versión se subió un
+`import_map_path` absoluto, el siguiente deploy falla con
+`import map path does not exist - /tmp/.../source/file:///tmp/.../deno.json`. Se
+arregla **pasando `import_map_path: "deno.json"` explícito** en cada despliegue.
+
+**Secretos de la función** (nunca en el repo):
+
+| Secreto | Para qué | Dónde vive |
+|---|---|---|
+| `SUPABASE_SERVICE_ROLE_KEY` | Lo inyecta Supabase; se usa **solo** dentro de la función | ✅ automático |
+| `RESEND_API_KEY` | Autenticación contra la API de Resend | ✅ **Supabase Vault**, secreto `resend_api_key` |
+| `RESEND_REMITENTE` | Remitente, p. ej. `Barberos <notifications@resend.dev>` | opcional, hay default |
+| `SECRETO_RECORDATORIOS` | Alternativa al de Vault para autorizar la llamada | opcional, se usa Vault |
+
+✅ **La clave de Resend NO está en un secreto de plataforma, sino en Vault.** El MCP no
+tiene ninguna herramienta para `supabase secrets set`, y así se resolvió mejor: la clave
+se guardó con `vault.create_secret` mediante `execute_sql` (**no** `apply_migration`,
+porque **un secreto no se versiona**) y la función la lee con la RPC
+`recordatorios_api_key_resend()`. Como alternativa sigue funcionando
+`Deno.env.get('RESEND_API_KEY')`, por si algún día se prefiere la CLI.
+
+⚠ **Esa RPC devuelve la clave EN CLARO**, así que sus `revoke … from anon, from
+authenticated` son **imprescindibles** (mismo motivo que en las otras dos, §10.7).
+
+#### Dos bugs reales que costaron una tanda de correos a clientes
+
+Los dos estaban en `sumarHoras()` y en el armado de las ventanas. Se documentan porque
+**ninguno de los dos daba error**: la función respondía `200` y el resultado era
+silenciosamente incorrecto.
+
+1. **`Invalid Date` → `"NaN-NaN-NaN"`.** `hora` ya trae segundos (`'22:10:43'`), así que
+   `` new Date(`${fecha}T${hora}:00Z`) `` construía `'…T22:10:43:00Z'`, que es un ISO
+   inválido → `getUTCFullYear()` devolvía `NaN`. Como las ventanas se comparan **como
+   texto** y `'NaN…' > '2026…'`, el resultado era que **H-24 matcheaba TODAS las citas
+   futuras** y **H-2 ninguna**. Fix: `hora.slice(0, 5)` + un `Number.isNaN` que lanza.
+2. **La ventana H-24 se había armado como `[ahora, ahora+24h]`**, 24 h de ancho, en vez
+   de `[ahora+23h, ahora+24h]`. `VENTANA_24H.min = 23` estaba definido y **nunca se
+   usaba**. Efecto: el aviso de "mañana" salía a cada cita del día y del siguiente, cada
+   hora, hasta agotar los 80 del presupuesto.
+
+Por los dos bugs, la **primera** ejecución real alcanzó a 2 clientes que no eran de
+prueba (uno con `HTTP 403` del remitente de prueba y otro con `HTTP 422` por correo
+inválido). Ninguno quedó marcado, así que reintentan a la hora siguiente.
+
+✅ **Barrera añadida**: `FORMATO_VENTANA` valida los 4 extremos contra
+`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$` y, si algo no cuadra, responde `500` **sin enviar
+nada**. Un formato roto debe ser un fallo ruidoso, no una ventana que matchea de más.
+
+#### Verificación de extremo a extremo (2026-10-13)
+
+| Prueba | Resultado |
+|---|---|
+| `SUM_HORAS` con Node: midnight, fin de mes, formato | ✅ |
+| Sin secreto / secreto falso | `401` ✅ |
+| Interruptor apagado | `200 {enviados:0, motivo:'interruptor apagado'}`, 0 marcas ✅ |
+| Cita a 1 h 30 min | entró **solo** en H-2, marcadas `2h` y no `24h` ✅ |
+| Cita a 23 h 30 min | entró **solo** en H-24, marcada `24h` y no `2h` ✅ |
+| **Segunda ejecución idéntica** | `enviados: []`, marcas sin cambiar → **no reenvía** ✅ |
+| Cita `cancelada` en ventana | excluida ✅ |
+| Cita sin `correo` en ventana | va a `sinCorreo`, no se envía ✅ |
+| `anon` llamando las 3 RPC | `permission denied` ✅ |
+| `pnpm lint` / `pnpm build` | 10 errores (línea base) / limpio ✅ |
+
+⚠ **Pendiente del dominio**: con `notifications@resend.dev` solo llegó al correo de la
+cuenta de Resend. Un cliente real devolvió **`HTTP 403`**, que es justo la restricción del
+remitente de prueba. Es el comportamiento correcto del "no marcar si falló", pero
+significa que **hoy el automático no le llega a ningún cliente**: hay que verificar un
+dominio en Resend (§18.54).
+
+#### Cómo probarla sin esperar al cron
+
+```sql
+select net.http_post(
+  url := 'https://<project-ref>.supabase.co/functions/v1/enviar-recordatorios',
+  headers := jsonb_build_object(
+    'Content-Type', 'application/json',
+    'apikey', '<anon>', 'Authorization', 'Bearer <anon>',
+    'x-recordatorios-secreto',
+      (select decrypted_secret from vault.decrypted_secrets
+        where name = 'recordatorios_secreto')),
+  body := '{}'::jsonb, timeout_milliseconds := 55000);
+```
+
+La respuesta **no** es inmediata: `pg_net` encola y se lee de `net._http_response` unos
+segundos después (`select status_code, content from net._http_response order by id desc
+limit 1`). El `500 WORKER_ERROR` del gateway significa que la función no arrancó (§
+`SUPABASE_URL`). Para ver el motivo hay que desplegar una sonda que devuelva la
+excepción en el cuerpo: **`console.log` no llega a los logs que expone `query_logs`**
+(que solo traen metadatos del gateway).
+
+⚠ **Las citas de prueba hay que crearlas a mano dentro de la ventana** y borrarlas
+después: la ventana es de 1 h de ancho, así que una fila creada "dentro de 2 h" se sale
+sola. Para caer en la ventana de H-2:
+`hora = (now() at time zone 'America/Mexico_City')::time + interval '1 h 30 min'`.
 
 ---
 
@@ -1956,6 +2225,9 @@ trabajo del cliente y el rediseño del admin si no están commiteados. Comprueba
 | `public/barber.jpg` | 2.2 MB, referenciado por ruta absoluta `/barber.jpg` en `Hero.jsx`. Si lo mueves o renuevas, actualiza el `src`. |
 | `src/pages/BookingPage.jsx` | El archivo más grande y el más frágil del flujo de citas (985 líneas: wizard + borrador en `sessionStorage` + auto-asignación de barbero). §8. |
 | `src/pages/cliente/CitasCliente.jsx` | Única vista de las citas del usuario. Depende de la política `cliente ve sus citas` **y** de las RPC `cancelar_cita` / `reagendar_cita`: si cambias cualquiera de las dos cosas, revisa este archivo y sus modales. |
+| `src/pages/admin/CitasAdmin.jsx` | Único archivo del frontend con los recordatorios: el WhatsApp manual (§9.5) y el interruptor del automático (§9.5). Si lo rompes, el canal de respaldo y el que apaga el automático se caen juntos. |
+| `supabase/functions/enviar-recordatorios/index.ts` | **Nunca debe llevar un secreto.** Todo se lee del entorno. Si aparece una clave ahí, hay que borrarla y rotarla. |
+| `cron.job` (`enviar-recordatorios`) | El comando lleva la `anon` key (pública) y **lee el secreto de Vault en vivo**: si alguien reescribe el job a mano, que no lo hardcodee. Se recrea con `cron.unschedule` + `cron.schedule` (§10.7). |
 | `src/pages/cliente/ClienteDashboard.jsx` | Shell de `/cliente`. Copia el patrón de `AdminDashboard`: si cambias uno, cambia los dos (§12.1b). |
 | `vite.config.js` / `eslint.config.js` | Afectan a toda la app. El lint ya falla (§15.1): tocar la config puede cambiar la línea base entera. |
 
@@ -2001,9 +2273,30 @@ trabajo del cliente y el rediseño del admin si no están commiteados. Comprueba
   escritura suya tiene que pasar por una RPC `SECURITY DEFINER`, no por un `update`
   directo;
   (5) las funciones de `public` (`rol_actual`, `es_admin`, `cancelar_cita`,
-  `reagendar_cita`, `asignar_barbero`, `horas_ocupadas`) llevan `revoke all` + `grant
-  execute` a roles concretos: **al recrearlas, repite los grants**, o el cliente recibe
+  `reagendar_cita`, `asignar_barbero`, `horas_ocupadas`, `recordatorios_secreto_valido`,
+  `recordatorios_citas_pendientes`) llevan `revoke all` + `grant execute` a roles
+  concretos: **al recrearlas, repite los grants**, o el cliente recibe
   `permission denied`.
+- ⚠ **`revoke all from public` NO es lo mismo que "solo `service_role`".** Supabase tiene
+  un `alter default privileges` que concede `execute` a `anon` y `authenticated` en el
+  esquema `public`: una RPC `security definer` creada con solo `revoke from public` +
+  `grant to service_role` sigue siendo **llamable desde el navegador**. Ya pasó con
+  `recordatorios_citas_pendientes`, que devolvía nombre, correo y teléfono y saltaba la
+  RLS de `citas`. Para cerrarla de verdad hay que **`revoke execute … from anon,
+  authenticated, public`** y después el `grant` a `service_role`. Verificado con `proacl`
+  y con `set local role anon`. Detalle en §10.7.
+- ⚠ **Excepción autorizada (2026-10-13): `supabase/functions/` sí existe.** Antes esta
+  regla pedía no crear funciones SQL ni triggers sin autorización; el usuario la dio
+  explícitamente para los recordatorios automáticos. Lo que se aplica es:
+  - el código de la Edge Function vive en `supabase/functions/enviar-recordatorios/`
+    (§4), **fuera de `src/`**, versionado y **sin ningún secreto**;
+  - **ningún secreto en el repo**: `RESEND_API_KEY` y el remitente van como secretos de
+    la plataforma (§10.7), y el secreto que autoriza a invocar la función se generó en
+    la BD y vive **solo en Supabase Vault**;
+  - **`service_role` solo dentro de la plataforma**: se usa con la clave que Supabase
+    inyecta en la función y **jamás** llega al frontend;
+  - lo que **no** se autoriza por esta excepción: meter la Edge Function en el bundle de
+    Vite, o llamar a Resend desde el navegador.
 - ⚠ **El rol se lee de `perfiles`, nunca de `auth.users.user_metadata`.** No reintroduzcas
   `user_metadata.role` en ninguna pantalla: lo escribe el cliente y por eso era
   auto-asignable (§18.39). Para promover a alguien, SQL; para cambiar de cuenta, login.
@@ -2140,7 +2433,7 @@ arreglar de paso:**
 | 24 | `citas` (modelo) | No hay columnas de pago. El botón "Cobrar" de `CitasAdmin` cierra la cita como `completada`; un registro real de cobro necesita `pagado`/`metodo_pago`/`cobrado_at`. |
 | 25 | ~~sillones~~ | **DESCARTADO por el usuario**: `barberos.sillon_numero` / `sillon_nombre` existen en la BD pero `CitasAdmin` no los usa (ni badge, ni tarjeta, ni columna, ni % de ocupación). La gestión de sillones quedó en la página de Barberos, si es que algún día se retoma. |
 | 26 | `CitasAdmin` — vista calendario | Placeholder navegable. Falta el modelo de horarios/slots y la detección de solapamientos (sigue sin haber forma de impedir dos citas en el mismo horario, §18.6). |
-| 27 | `CitasAdmin` — recordatorios | Tarjeta estática con botones deshabilitados. Falta proveedor de mensajería, Edge Function con las plantillas y la regla de disparo (H-24 / H-2). |
+| 27 | ~~`CitasAdmin` — recordatorios~~ | **RESUELTO** (2026-10-13), en los **dos canales**. **Manual por WhatsApp** (§9.5): botón en la tabla y en la tarjeta del panel inferior, abre `wa.me` con el mensaje armado y marca `recordatorio_enviado_at`. **Automático por correo** (§10.7): Edge Function `enviar-recordatorios` desplegada, `pg_cron` la llama cada hora (`5 * * * *`) vía `pg_net`, envía en las ventanas H-24 y H-2 con Resend, protegida por un secreto en Supabase Vault, con la **clave de Resend también en Vault**, límite de 80 correos por ejecución y marcación solo si el envío fue 2xx. El interruptor "Envío automático" vive en `configuracion.recordatorios_activos` (default `false`, **hoy apagado**). ✅ Verificado de extremo a extremo, incluida la **segunda ejecución que no reenvía**. ⚠ **Le falta verificar el dominio de Resend** (#53): mientras tanto el automático no le llega a ningún cliente real. |
 | 28 | `citas.barbero_id` | Existe en la BD y `BookingPage` **ya lo rellena** (RPC `asignar_barbero` cuando el cliente elige "Cualquier barbero"), pero de las 20 filas actuales **15 lo siguen teniendo en `null`**: son las creadas antes de la auto-asignación y las del alta manual. La columna Barbero sale en "Sin asignar" para esas. |
 | 29 | `citas` (RLS) | **RESUELTO**: se agregó la política `Admin escribe` para `authenticated` (§10.5). Antes toda escritura del panel sobre `citas` fallaba en silencio. |
 | 30 | `CitasAdmin` — tag VIP | No existe el criterio para "Club Noble" ni ningún campo VIP en `citas`. Omitido a propósito; no lo inventes. |
@@ -2158,12 +2451,19 @@ arreglar de paso:**
 | 42 | `BLOQUES` duplicado | La lista de horarios está **copiada** en `BookingPage.jsx` y en `CitasCliente.jsx` (que la necesita para el modal de reagendar). Si cambias el horario del salón en uno, tienes que cambiarlo en el otro o el cliente podrá reagendar a horas que `/agendar` nunca ofrece. El arreglo real es una tabla `horarios` + RPC, no un constant compartido (§18.6). |
 | 43 | `CitasAdmin` no muestra `cliente_id` | `cargarDatos` hace `select('*')`, así que el dato **llega**, pero ninguna columna lo usa: la celda "Cliente" muestra `nombre` y `telefono`. Con el portal `/cliente` ya existe la relación y sería el filtro más útil ("citas sin cliente" = reservas hechas antes de exigir sesión). |
 | 44 | `/login` — confirmación de email | No se puede verificar desde el código si el proyecto de Supabase exige confirmar el correo: si lo exige, el registro nuevo muestra "¡Cuenta creada!" pero el usuario **no puede entrar** hasta confirmar, y `/agendar` habrá perdido el borrador si tarda más de 2 h (§8). Única duda pendiente de revisar en el panel de Supabase. |
-| 45 | **Esquema aplicado fuera de las migraciones** | `list_migrations` devuelve 9 entradas y la última es `cita_productos_jsonb` (2026-10-06). La columna `citas.cliente_id`, la política `cliente ve sus citas` y las funciones `cancelar_cita` / `reagendar_cita` **no tienen entrada**: se aplicaron directamente en la BD. Si alguien reconstruye el proyecto desde cero (o cambia de proyecto de Supabase), esa parte se pierde en silencio y `/cliente` devuelve listas vacías sin error visible. **Conviene una migración que documente/recree el estado actual.** |
+| 45 | **Esquema aplicado fuera de las migraciones** | `list_migrations` devolvía 9 entradas y la última era `cita_productos_jsonb` (2026-10-06). La columna `citas.cliente_id`, la política `cliente ve sus citas` y las funciones `cancelar_cita` / `reagendar_cita` **no tienen entrada**: se aplicaron directamente en la BD. Si alguien reconstruye el proyecto desde cero (o cambia de proyecto de Supabase), esa parte se pierde en silencio y `/cliente` devuelve listas vacías sin error visible. ⚠ **Sigue abierto**: lo de los recordatorios (§10.7) **sí** quedó en migraciones (`cita_recordatorios_automaticos`, `configuracion_recordatorios_activos`, `cron_recordatorios`, `rpc_recordatorios_solo_service_role`), pero lo anterior no. **Conviene una migración que documente/recree el estado actual.** |
 | 46 | `citas_slot_unico` no cubre `barbero_id IS NULL` | El índice único exige `barbero_id is not null`, así que **dos citas sin barbero sí pueden caer en el mismo horario**. Es raro en el flujo público (auto-asignación), pero `CitaManualForm` y el `BookingForm.jsx` muerto permiten dar de alta sin barbero, y hoy 15 de las 20 filas están así. |
 | 47 | `/contacto` con datos vacíos | Las dos sedes tienen `nombre`, `direccion`, `horarios`, `telefono` y `mapQuery` **en blanco**, así que los `<iframe>` piden `?q=&output=embed` y muestran el mapa equivocado (o nada). Además `s.horarios.map(h => …)` sobre `['']` renderiza una línea vacía. |
 | 48 | ARIA inconsistente en el portal del cliente | Los tabs de `CitasCliente` son un `role="tablist"` con `role="tab"` + `aria-selected` **sin `tabpanel`**, exactamente el patrón que `CitasAdmin` evita a propósito con `role="group"` + `aria-pressed`. Además el modal de confirmación de `BookingPage` no tiene `role="dialog"`. No son bugs de runtime, pero rompen la consistencia del proyecto. |
 | 49 | **El rol `admin` no tiene ninguna cuenta** | Verificado 2026-10-12: `perfiles` tiene **1 `superadmin`** (que además es el admin del negocio) y **4 `cliente`**, **0 `admin`**. El rol existe en el `CHECK`, en `rutaInicioPorRol` y en `es_admin()`, pero nadie lo usa: el flujo real es "superadmin entra a `/admin`". Si mañana el dueño de la barbería es otra persona, promote con `update perfiles set rol = 'admin'` (§10.6) y ya funciona sin tocar código. |
 | 50 | **Cambio de cuenta sin refrescar `rol` a tiempo** | `LoginPage` no navega dentro de `handleSubmit`: marca `entrado` y espera a que `cargandoRol` sea `false` en un efecto, porque el rol se lee de la BD justo después de iniciar sesión. Consecuencia: si alguien cierra sesión y entra con otra cuenta muy rápido, el `rol` puede ser el de la sesión anterior durante un instante. `ProtectedRoute` lo absorbe (`Cargando...`), pero **si añades una pantalla que lea `rol` fuera del guard, comprueba también `cargandoRol`**. |
+| 51 | **`citas.telefono` no está normalizado** | De las 21 filas actuales (verificado 2026-10-13): 6 tienen 10 dígitos, 6 tienen 11 y **9 tienen otra longitud**, así que el botón "Recordar" aparece deshabilitado en esas 9. `telefonoParaWhatsApp()` limpia `00`/`044`/`52`/`1` para tolerar lo que se escribe a mano, pero no puede inventar los dígitos que faltan. La columna es `text NOT NULL` sin CHECK: si quieres garantía, añade `check` o normaliza los datos con un UPDATE (§). |
+| 52 | `recordatorio_enviado_at` se marca desde el cliente | El `update` lo hace el navegador del barbero después de abrir WhatsApp, así que la marca depende de que **no cierre la pestaña**. Si el navegador se cierra entre el `window.open` y el `update`, el recordatorio se envió pero no consta. Las **ventanas H-24 y H-2 ya no tienen ese problema**: las marca la Edge Function desde el servidor (§10.7). |
+| 53 | **Dominio de Resend sin verificar** | Con el remitente de prueba `notifications@resend.dev` **solo se puede enviar al correo de la cuenta de Resend**: cualquier otro destinatario devuelve un `HTTP 403`, la función lo registra en `resumen.fallos` y **no marca** la cita, así que reintentará cada hora. Comprobado con una cita real: `403`. Antes de apuntarlo a clientes hay que **verificar un dominio** en Resend con los registros DNS. Mientras tanto, **el único canal que llega a un cliente es el manual por WhatsApp** (§9.5). |
+| 54 | **Las citas sin `correo` no reciben aviso** | El automático **se salta** toda cita sin correo (van a `resumen.sinCorreo`, que solo sale en el log de la Edge Function). De las 22 filas actuales muchas no lo tienen porque `citas.correo` es **nullable** y `BookingPage` solo lo pide en el paso 3. El panel **no muestra cuántas citas se quedan sin aviso**: solo el log de la función. Si esto molesta, la señal natural es un contador de "citas próximas sin correo" en la tarjeta de recordatorios. |
+| 55 | **El automático no se ha probado con una cita real** | Solo se verificó con citas de prueba creadas y borradas a mano (§10.7). El comportamiento con una cita de verdad depende de que su `correo` sea válido (un `HTTP 422` de Resend significa que el correo está mal escrito) y de que el dominio esté verificado (#53). |
+| 56 | **Comparar fechas como texto no avisa de un `NaN`** | La lección de los 2 bugs de §10.7: la Edge Function compara `(fecha::text || ' ' || left(hora::text,8))` contra los extremos de la ventana, **como texto**, y un extremo mal formado **no da error**: simplemente deja de encontrar citas… o peor, hace que la ventana matchee de más. Un `Invalid Date` en JS se convirtió en `"NaN-NaN-NaN"`, y como `'NaN…' > '2026…'` en lexicografía, **H-24 pasó a ser "toda cita futura"**. Hoy está protegido con `FORMATO_VENTANA` (aborta con `500` si los 4 extremos no cuadran) y con un `Number.isNaN` dentro de `sumarHoras`. **Si añades otra comparación de fechas por texto en este proyecto, valida el formato antes de comparar.** |
+| 57 | **Casi ninguna cita real tiene `correo` usable** | El automático necesita `citas.correo`, que es **nullable**: las 4 de la prueba salían a `23302011@utfv.edu.mx` y el resto no llegó a esa columna con una dirección válida (uno devolvió `422`). O sea: **aunque verifiques el dominio, el automático no le llegaría hoy a casi ningún cliente real**. Lo que falta no es código: es un correo de verdad en esas citas, o un backfill de `citas.correo`. Mismo aviso en #54. |
 
 ---
 

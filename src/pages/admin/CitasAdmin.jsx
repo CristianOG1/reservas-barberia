@@ -9,10 +9,15 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import CitaManualForm from './CitaManualForm'
 import { useConfirmarCita } from '../../hooks/useConfirmarCita'
+import { useConfiguracion } from '../../context/useConfiguracion'
 
 /* ============================================================
    1. UTILIDADES DE FECHA, HORA Y CATÁLOGO
    ============================================================ */
+
+// Código de país para WhatsApp. wa.me exige el número internacional sin signos:
+// 10 dígitos (los dos dígitos de un móvil mexicano) + 52.
+const CODIGO_PAIS = '52'
 
 const DIAS_CORTO = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb']
 
@@ -80,6 +85,62 @@ function normalizar(texto) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
+}
+
+/* ---- Recordatorio por WhatsApp ---- */
+
+/**
+ * Normaliza un teléfono al formato que wa.me espera: solo dígitos y con código de
+ * país. Acepta lo que la gente escribe de verdad ('55 1234 5678', '+52 1 55…').
+ * @returns {{ numero: string, motivo: string }} `numero` vacío si no hay número
+ *   usable, y `motivo` explicando por qué, para poder ponerlo en el `title`.
+ */
+function telefonoParaWhatsApp(telefono) {
+  const crudo = String(telefono ?? '').trim()
+  if (!crudo) return { numero: '', motivo: 'La cita no tiene teléfono registrado' }
+
+  let digitos = crudo.replace(/\D/g, '')
+  // Prefijos que la gente escribe a mano: prefijo internacional '00', la larga
+  // nacional '044', el código de país y el '1' de móvil internacional. Se quitan
+  // en ese orden ANTES de validar la longitud: si no, un "+52 1 55 1234 5678"
+  // quedaría con el 1 pegado y el número sería inválido.
+  if (digitos.startsWith('00')) digitos = digitos.slice(2)
+  if (digitos.startsWith('044')) digitos = digitos.slice(3)
+  if (digitos.startsWith(CODIGO_PAIS)) digitos = digitos.slice(CODIGO_PAIS.length)
+  if (digitos.length === 11 && digitos.startsWith('1')) digitos = digitos.slice(1)
+
+  // 10 dígitos = móvil local: se le antepone el código de país.
+  if (digitos.length === 10) digitos = `${CODIGO_PAIS}${digitos}`
+  else if (digitos.length !== 11) {
+    return { numero: '', motivo: `Teléfono "${crudo}" no válido: ${digitos.length} dígitos, se esperan 10` }
+  }
+
+  return { numero: digitos, motivo: '' }
+}
+
+/**
+ * Marca de tiempo de un recordatorio automático, para el `title` de la etiqueta.
+ * Las columnas `recordatorio_24h_enviado_at` y `recordatorio_2h_enviado_at` las
+ * escribe la Edge Function con `now()`, así que llegan como timestamptz ISO.
+ */
+function formatRecordatorio(iso) {
+  if (!iso) return ''
+  const n = new Date(iso)
+  if (Number.isNaN(n.getTime())) return ''
+  return n.toLocaleString('es-MX', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function mensajeRecordatorio(cita, nombreNegocio) {
+  return (
+    `Hola ${cita.nombre}, te recordamos tu cita en ${nombreNegocio} ` +
+    `el ${etiquetaFecha(cita.fecha)} a las ${formatearHora(cita.hora)} ` +
+    `para ${cita.servicio}. ¡Te esperamos!`
+  )
 }
 
 // Una cita puede traer varios servicios: `citas.servicio` los guarda unidos con
@@ -222,6 +283,17 @@ function IconoReactivar() {
   )
 }
 
+// Icono de WhatsApp. Trazo, no relleno, para empatar con los demás iconos del
+// set (todos son outline de 24x24 con stroke currentColor).
+function IconoWhatsApp() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" aria-hidden="true">
+      <path d="M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 20.5l1.8-5.2A8.4 8.4 0 1 1 21 11.5z"/>
+      <path d="M8.6 9.3c.2-.4.4-.4.6-.4h.5c.2 0 .4 0 .6.5l.7 1.7c.1.2 0 .4-.1.5l-.4.5c-.1.1-.2.3-.1.4a6 6 0 0 0 2.6 2.4c.2.1.3 0 .4-.1l.5-.6c.1-.2.3-.2.5-.1l1.6.8c.2.1.3.2.3.4 0 .5-.3 1-.6 1.2-.3.2-.8.3-1.3.2-.4-.1-1.1-.2-2.2-.8-1.6-.8-2.6-2-2.9-3-.3-.4-.6-1-.6-1.4 0-.4.2-.8.3-1z"/>
+    </svg>
+  )
+}
+
 function IconoBandeja() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
@@ -283,9 +355,16 @@ export default function CitasAdmin() {
   const [pagina, setPagina] = useState(1)
   const [mostrarForm, setMostrarForm] = useState(false)
   const [citaEditando, setCitaEditando] = useState(null)
+  const [guardandoInterruptor, setGuardandoInterruptor] = useState(false)
 
   // Lógica de confirmación compartida con Resumen: optimistic update + revert (§).
   const confirmarCita = useConfirmarCita(setCitas, setErrorMsg)
+
+  // Nombre del negocio para el texto del recordatorio. Viene de la tabla
+  // `configuracion` (misma fila que el sidebar); si está vacía se usa el
+  // placeholder que ya usa el resto del panel.
+  const { configuracion, refrescar: refrescarConfiguracion } = useConfiguracion()
+  const nombreNegocio = configuracion.nombre?.trim() || 'Barbería'
 
   // `new Date()` dentro del render es una función impura (react-hooks/purity): da
   // resultados distintos en cada render. Se congela una sola vez al montar, así
@@ -360,11 +439,107 @@ export default function CitasAdmin() {
 
   const enCursoHoy = citasHoy.filter((c) => estaEnCurso(c) || estadoDe(c) === 'completada').length
 
+  /* ---- Recordatorios por WhatsApp (manuales) ----
+     Un recordatorio solo tiene sentido si la cita sigue viva y todavía no pasó:
+     estados `pendiente` o `confirmada` y fecha de hoy o posterior. Para las de
+     hoy se exige además que la hora no sea ya anterior a `ahoraMin`. */
+  const esRecordable = (cita) => {
+    const e = estadoDe(cita)
+    if (e !== 'pendiente' && e !== 'confirmada') return false
+    if (!cita.fecha) return false
+    if (cita.fecha > hoy) return true
+    if (cita.fecha < hoy) return false
+    const inicio = minutosDeHora(cita.hora)
+    return inicio == null || inicio >= ahoraMin
+  }
+
+  // Citas que conviene recordar ahora: mañana entero + las de hoy que aún no
+  // empiezan. Se ordena por fecha y hora para que la lista se lea como agenda.
+  const paraRecordar = citas
+    .filter(esRecordable)
+    .filter((c) => c.fecha === manana || c.fecha === hoy)
+    .sort((a, b) =>
+      (a.fecha + a.hora).localeCompare(b.fecha + b.hora)
+    )
+
+  /**
+   * Abre WhatsApp con el mensaje y marca la cita como recordada.
+   *
+   * El orden importa: la pestaña se abre SIEMPRE (es lo que el barbero quiere
+   * hacer) y el `update` va después. Si la marca falla, el recordatorio ya se
+   * envió, así que el aviso solo informa de que no quedó registrado.
+   */
+  const recordarCita = async (cita) => {
+    const { numero } = telefonoParaWhatsApp(cita.telefono)
+    if (!numero) return
+
+    const enlace =
+      `https://wa.me/${numero}?text=${encodeURIComponent(mensajeRecordatorio(cita, nombreNegocio))}`
+    window.open(enlace, '_blank', 'noopener,noreferrer')
+
+    setErrorMsg(null)
+    const { error } = await supabase
+      .from('citas')
+      .update({ recordatorio_enviado_at: new Date().toISOString() })
+      .eq('id', cita.id)
+
+    if (error) {
+      setErrorMsg(`Se abrió WhatsApp para ${cita.nombre}, pero no se pudo marcar como recordada: ${error.message}`)
+      return
+    }
+    setCitas((prev) =>
+      prev.map((c) =>
+        c.id === cita.id ? { ...c, recordatorio_enviado_at: new Date().toISOString() } : c
+      )
+    )
+  }
+
+  const recordada = (cita) => Boolean(cita.recordatorio_enviado_at)
+
+  /* ---- Envío automático por correo (H-24 y H-2 antes de la cita) ----
+     Lo dispara la Edge Function `enviar-recordatorios`, que lee el interruptor
+     de `configuracion.recordatorios_activos`. El switch es lo único que puede
+     pararlo desde el panel; por eso se guarda en la base y no en un useState. */
+
+  const alternarEnvioAutomatico = async () => {
+    const anterior = Boolean(configuracion.recordatorios_activos)
+    const nuevo = !anterior
+
+    setGuardandoInterruptor(true)
+    setErrorMsg(null)
+    const { error } = await supabase
+      .from('configuracion')
+      .update({ recordatorios_activos: nuevo })
+      .eq('id', 1)
+    setGuardandoInterruptor(false)
+
+    // El `error` sí se revisa a propósito: si un cliente (o una sesión sin rol)
+    // escribiera aquí, el UPDATE afectaría 0 filas sin lanzar error.
+    if (error) {
+      setErrorMsg(`No se pudo cambiar el envío automático: ${error.message}`)
+      return
+    }
+    refrescarConfiguracion()
+  }
+
+  // Marcas de los correos automáticos ya enviados. Se muestran en texto pequeño,
+  // sin pill: son un dato de la cita, no un estado (§11.4).
+  const MarcasCorreo = ({ cita }) => {
+    const h24 = Boolean(cita.recordatorio_24h_enviado_at)
+    const h2 = Boolean(cita.recordatorio_2h_enviado_at)
+    if (!h24 && !h2) return null
+    return (
+      <span className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate">
+        {h24 && <span title={`Correo de 24 h enviado ${formatRecordatorio(cita.recordatorio_24h_enviado_at)}`}>24 h enviado</span>}
+        {h24 && h2 && <span aria-hidden="true">·</span>}
+        {h2 && <span title={`Correo de 2 h enviado ${formatRecordatorio(cita.recordatorio_2h_enviado_at)}`}>2 h enviado</span>}
+      </span>
+    )
+  }
+
   const cumplimientoPct = citasSemana.length > 0
     ? Math.round(((citasSemana.length - canceladasSemana.length) / citasSemana.length) * 100)
     : null
-
-  const pendientesManana = citas.filter((c) => c.fecha === manana && estadoDe(c) === 'pendiente').length
 
   /* ---- Distribución de los últimos 7 días (conteo real agrupado por fecha) ---- */
   const distribucion = Array.from({ length: 7 }, (_, i) => {
@@ -418,9 +593,22 @@ export default function CitasAdmin() {
 
   /* ---- Acciones rápidas por estado ---- */
   const accionesDe = (cita) => {
+    // El recordatorio solo aparece en citas vivas y no pasadas (esRecordable), y
+    // va primero para que se vea sin desplazamiento.
+    const puedeRecordar = esRecordable(cita)
+    const yaRecordada = recordada(cita)
+    const accionRecordar = {
+      k: 'recordar',
+      etiqueta: yaRecordada ? 'Recordar de nuevo' : 'Recordar',
+      clase: 'neutro',
+      icono: <IconoWhatsApp />,
+      accion: () => recordarCita(cita),
+    }
+    const conRecordar = (base) => (puedeRecordar ? [accionRecordar, ...base] : base)
+
     switch (estadoDe(cita)) {
       case 'pendiente':
-        return [
+        return conRecordar([
           {
             k: 'recontactar',
             etiqueta: 'Recontactar',
@@ -448,9 +636,9 @@ export default function CitasAdmin() {
               aplicarEstado(cita, 'cancelada')
             },
           },
-        ]
+        ])
       case 'confirmada':
-        return [
+        return conRecordar([
           {
             k: 'completar',
             etiqueta: 'Completar',
@@ -479,7 +667,7 @@ export default function CitasAdmin() {
             icono: <IconoCalendarioMas />,
             accion: () => abrirReprogramar(cita),
           },
-        ]
+        ])
       case 'completada':
         return [
           {
@@ -837,6 +1025,12 @@ export default function CitasAdmin() {
                             <div className="min-w-0">
                               <p className="truncate text-sm font-medium text-navy">{c.nombre}</p>
                               <p className="truncate text-xs tabular-nums text-slate">{c.telefono}</p>
+                              {recordada(c) && (
+                                <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-amber">
+                                  Recordada
+                                </p>
+                              )}
+                              <MarcasCorreo cita={c} />
                               {primeraVisita && (
                                 <span className="mt-1 inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber">
                                   Primera visita
@@ -910,16 +1104,23 @@ export default function CitasAdmin() {
                         {/* Acciones rápidas */}
                         <td className="px-5 py-3.5">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            {accionesDe(c).map((a) => (
-                              <button
-                                key={a.k}
-                                onClick={a.accion}
-                                className={CLASE_ACCION[a.clase]}
-                              >
-                                {a.icono}
-                                {a.etiqueta}
-                              </button>
-                            ))}
+                            {accionesDe(c).map((a) => {
+                              const tel = telefonoParaWhatsApp(c.telefono)
+                              const bloqueado = a.k === 'recordar' && !tel.numero
+                              return (
+                                <button
+                                  key={a.k}
+                                  onClick={a.accion}
+                                  disabled={bloqueado}
+                                  title={bloqueado ? tel.motivo : undefined}
+                                  aria-label={bloqueado ? `Recordar: ${tel.motivo}` : undefined}
+                                  className={`${CLASE_ACCION[a.clase]} disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent`}
+                                >
+                                  {a.icono}
+                                  {a.etiqueta}
+                                </button>
+                              )
+                            })}
                           </div>
                         </td>
                       </tr>
@@ -1000,47 +1201,111 @@ export default function CitasAdmin() {
           </div>
         </div>
 
-        {/* 5.2 Recordatorios SMS / WhatsApp */}
-        {/* PENDIENTE: esta integración NO existe. Los botones quedan deshabilitados
-             a propósito —no hacen nada y no fingen mandar nada. Para conectarla
-             hace falta: (1) un proveedor (Twilio / WhatsApp Business), (2) una
-             Edge Function con la plantilla, y (3) decidir desde cuándo se dispara
-             (H-24 y H-2 antes de la cita). El conteo de arriba sí es real. */}
+        {/* 5.2 Recordatorios */}
+        {/* Hay DOS canales, y son independientes:
+             · MANUAL: el botón abre WhatsApp con el mensaje listo y marca
+               `recordatorio_enviado_at`. Lo hace el barbero, cuando quiere.
+             · AUTOMÁTICO: la Edge Function `enviar-recordatorios` envía un
+               correo 24 h y otro 2 h antes de la cita y marca sus propias
+               columnas. La manda pg_cron cada hora y para con este interruptor.
+             Ambos conviven: el manual es el respaldo cuando el automático no
+             llegó (sin correo en la cita, fallo de Resend, dominio sin verificar). */}
         <div className="rounded-xl border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-5 py-4">
-            <h3 className="font-serif text-base text-navy">Recordatorios via WhatsApp</h3>
+            <h3 className="font-serif text-base text-navy">Recordatorios</h3>
             <p className="mt-0.5 text-xs text-slate">
-              <strong className="text-navy">{pendientesManana}</strong> citas por confirmar mañana
+              Correo automático <strong className="text-navy">24 h</strong> y{' '}
+              <strong className="text-navy">2 h</strong> antes de cada cita
             </p>
           </div>
           <div className="px-5 py-5">
-            <div className="mb-4 flex items-start gap-3 rounded-lg bg-slate-50 p-3">
-              <span className="mt-0.5 shrink-0 text-slate-400"><IconoBandeja /></span>
-              <p className="text-xs text-slate">
-                Canal de mensajería <strong className="text-navy">no configurado</strong>. Enviar
-                confirmaciones y recordatorios automáticos requiere conectar un proveedor externo.
+            {/* Interruptor maestro. Es el mismo control que usan BarberosAdmin y
+                BarberoForm: `role="switch"` + `aria-checked`, pista con knob que
+                viaja, y el texto visible hace de nombre accesible. */}
+            <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(configuracion.recordatorios_activos)}
+                disabled={guardandoInterruptor}
+                onClick={alternarEnvioAutomatico}
+                className="flex items-center gap-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    configuracion.recordatorios_activos ? 'bg-primary' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                      configuracion.recordatorios_activos ? 'translate-x-4' : 'translate-x-1'
+                    }`}
+                  />
+                </span>
+                <span className={configuracion.recordatorios_activos ? 'text-navy' : 'text-slate'}>
+                  Envío automático
+                </span>
+              </button>
+              <p className="mt-2 text-xs text-slate">
+                {configuracion.recordatorios_activos
+                  ? 'Activo: se revisa cada hora y se envía a las citas que entren en la ventana de 24 h o de 2 h. Necesita el dominio del remitente verificado en Resend.'
+                  : 'Apagado: no se envía ningún correo. Las citas de abajo siguen disponibles para el recordatorio manual por WhatsApp.'}
               </p>
             </div>
-            <ul className="mb-4 space-y-1.5 text-xs text-slate">
-              <li className="flex items-start gap-2"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-300" />Plantilla · Confirmación de reserva</li>
-              <li className="flex items-start gap-2"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-300" />Plantilla · Recordatorio 24 h antes</li>
-              <li className="flex items-start gap-2"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-300" />Plantilla · Reprogramación y cancelación</li>
-            </ul>
-            <div className="flex gap-2">
-              <button
-                disabled
-                title="Pendiente: sin integración de mensajería"
-                className="flex-1 cursor-not-allowed rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate opacity-50"
-              >
-                Ver Plantillas
-              </button>
-              <button
-                disabled
-                title="Pendiente: sin integración de mensajería"
-                className="flex-1 cursor-not-allowed rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white opacity-50"
-              >
-                Enviar Ahora
-              </button>
+
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate">
+              Recordatorio manual por WhatsApp
+            </h4>
+            <p className="mb-3 text-xs text-slate">
+              <strong className="text-navy">{paraRecordar.length}</strong> citas por recordar
+              {paraRecordar.length > 0 && ' (hoy y mañana)'}
+            </p>
+            {paraRecordar.length === 0 ? (
+              <p className="text-xs text-slate">No hay citas por recordar.</p>
+            ) : (
+              <ul className="mb-4 space-y-2">
+                {paraRecordar.map((c) => {
+                  const tel = telefonoParaWhatsApp(c.telefono)
+                  return (
+                    <li
+                      key={c.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-medium text-navy">{c.nombre}</p>
+                        <p className="text-xs tabular-nums text-slate">
+                          {etiquetaFecha(c.fecha)} · {formatearHora(c.hora)}
+                          {recordada(c) && (
+                            <span className="ml-1.5 font-semibold uppercase tracking-wide text-amber">
+                              Recordada
+                            </span>
+                          )}
+                        </p>
+                        <MarcasCorreo cita={c} />
+                      </div>
+                      <button
+                        onClick={() => recordarCita(c)}
+                        disabled={!tel.numero}
+                        title={tel.numero ? `Abrir WhatsApp con ${tel.numero}` : tel.motivo}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                      >
+                        <IconoWhatsApp />
+                        {recordada(c) ? 'Recordar de nuevo' : 'Recordar'}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+
+            <div className="flex items-start gap-3 rounded-lg bg-slate-50 p-3">
+              <span className="mt-0.5 shrink-0 text-slate-400"><IconoBandeja /></span>
+              <p className="text-xs text-slate">
+                El botón "Recordar" abre WhatsApp con el mensaje listo y marca la
+                cita por separado. El correo automático solo usa sus propias
+                columnas, así que un recordatorio enviado por un canal no silencia
+                al otro.
+              </p>
             </div>
           </div>
         </div>
