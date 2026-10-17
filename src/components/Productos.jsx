@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
+import { useBarberia } from '../context/useBarberia'
 
 // `productos.precio` es numérico: lo mostramos como $350 MXN.
 function formatoPrecio(valor) {
@@ -9,13 +10,17 @@ function formatoPrecio(valor) {
 }
 
 export default function Productos() {
+  // El catálogo es de UNA barbería: todo se filtra por su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
+
   const [productos, setProductos] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(false)
 
   useEffect(() => {
-    cargarProductos()
-  }, [])
+    if (barberiaId) cargarProductos()
+  }, [barberiaId])
 
   const cargarProductos = async () => {
     setCargando(true)
@@ -24,6 +29,7 @@ export default function Productos() {
     const { data, error: errorSupabase } = await supabase
       .from('productos')
       .select('*')
+      .eq('barberia_id', barberiaId)
       .order('created_at', { ascending: true })
 
     if (errorSupabase) {

@@ -10,6 +10,7 @@ import { supabase } from '../../supabaseClient'
 import CitaManualForm from './CitaManualForm'
 import { useConfirmarCita } from '../../hooks/useConfirmarCita'
 import { useConfiguracion } from '../../context/useConfiguracion'
+import { useBarberia } from '../../context/useBarberia'
 
 /* ============================================================
    1. UTILIDADES DE FECHA, HORA Y CATÁLOGO
@@ -326,6 +327,43 @@ function IconoBarras() {
   )
 }
 
+/* Interruptor de un canal de la tarjeta de recordatorios (correo / WhatsApp).
+   Es el MISMO control que usan `BarberosAdmin` y `BarberoForm` (§9.3, §9.4):
+   `role="switch"` + `aria-checked`, pista `relative inline-flex h-5 w-9
+   rounded-full` (`bg-slate-300` / `bg-primary`) y knob `h-3.5 w-3.5 rounded-full
+   bg-white` que viaja con `translate-x-1` / `translate-x-4`. La etiqueta visible
+   hace de nombre accesible; no hay animación nueva, solo el `transition-colors`
+   que ya usa todo el admin. Al vivir una sola vez, los dos canales no pueden
+   divergir por accidente. */
+function InterruptorCanal({ etiqueta, activo, ayuda, bloqueado, onToggle }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={activo}
+        disabled={bloqueado}
+        onClick={onToggle}
+        className="flex items-center gap-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <span
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+            activo ? 'bg-primary' : 'bg-slate-300'
+          }`}
+        >
+          <span
+            className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+              activo ? 'translate-x-4' : 'translate-x-1'
+            }`}
+          />
+        </span>
+        <span className={activo ? 'text-navy' : 'text-slate'}>{etiqueta}</span>
+      </button>
+      <p className="mt-2 text-xs text-slate">{ayuda}</p>
+    </div>
+  )
+}
+
 /* ============================================================
    3. ESTILOS DE LOS BOTONES DE ACCIÓN RÁPIDA
    ============================================================ */
@@ -357,13 +395,17 @@ export default function CitasAdmin() {
   const [citaEditando, setCitaEditando] = useState(null)
   const [guardandoInterruptor, setGuardandoInterruptor] = useState(false)
 
+  // La agenda es de UNA barbería: lecturas y escrituras llevan su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
+
   // Lógica de confirmación compartida con Resumen: optimistic update + revert (§).
-  const confirmarCita = useConfirmarCita(setCitas, setErrorMsg)
+  const confirmarCita = useConfirmarCita(setCitas, setErrorMsg, barberiaId)
 
   // Nombre del negocio para el texto del recordatorio. Viene de la tabla
   // `configuracion` (misma fila que el sidebar); si está vacía se usa el
   // placeholder que ya usa el resto del panel.
-  const { configuracion, refrescar: refrescarConfiguracion } = useConfiguracion()
+  const { configuracion, cargando: cargandoConfiguracion, refrescar: refrescarConfiguracion } = useConfiguracion()
   const nombreNegocio = configuracion.nombre?.trim() || 'Barbería'
 
   // `new Date()` dentro del render es una función impura (react-hooks/purity): da
@@ -372,15 +414,15 @@ export default function CitasAdmin() {
   const [reloj] = useState(() => new Date())
 
   useEffect(() => {
-    cargarDatos()
-  }, [])
+    if (barberiaId) cargarDatos()
+  }, [barberiaId])
 
   const cargarDatos = async () => {
     setCargando(true)
     const [citasRes, barberosRes, serviciosRes] = await Promise.all([
-      supabase.from('citas').select('*').order('fecha', { ascending: true }).order('hora', { ascending: true }),
-      supabase.from('barberos').select('*').order('created_at', { ascending: true }),
-      supabase.from('servicios').select('*').order('nombre', { ascending: true }),
+      supabase.from('citas').select('*').eq('barberia_id', barberiaId).order('fecha', { ascending: true }).order('hora', { ascending: true }),
+      supabase.from('barberos').select('*').eq('barberia_id', barberiaId).order('created_at', { ascending: true }),
+      supabase.from('servicios').select('*').eq('barberia_id', barberiaId).order('nombre', { ascending: true }),
     ])
 
     setCitas(citasRes.data || [])
@@ -399,7 +441,7 @@ export default function CitasAdmin() {
     if (anterior === nuevoEstado) return
     setCitas(citas.map((c) => (c.id === cita.id ? { ...c, estado: nuevoEstado } : c)))
     setErrorMsg(null)
-    const { error } = await supabase.from('citas').update({ estado: nuevoEstado }).eq('id', cita.id)
+    const { error } = await supabase.from('citas').update({ estado: nuevoEstado }).eq('id', cita.id).eq('barberia_id', barberiaId)
     if (error) {
       setCitas(citas.map((c) => (c.id === cita.id ? { ...c, estado: anterior } : c)))
       setErrorMsg(`No se pudo actualizar el estado de la cita: ${error.message}`)
@@ -482,6 +524,7 @@ export default function CitasAdmin() {
       .from('citas')
       .update({ recordatorio_enviado_at: new Date().toISOString() })
       .eq('id', cita.id)
+      .eq('barberia_id', barberiaId)
 
     if (error) {
       setErrorMsg(`Se abrió WhatsApp para ${cita.nombre}, pero no se pudo marcar como recordada: ${error.message}`)
@@ -496,30 +539,76 @@ export default function CitasAdmin() {
 
   const recordada = (cita) => Boolean(cita.recordatorio_enviado_at)
 
-  /* ---- Envío automático por correo (H-24 y H-2 antes de la cita) ----
-     Lo dispara la Edge Function `enviar-recordatorios`, que lee el interruptor
-     de `configuracion.recordatorios_activos`. El switch es lo único que puede
-     pararlo desde el panel; por eso se guarda en la base y no en un useState. */
+  /* ---- Envío automático: dos canales, una sola fila de `configuracion` ----
+     El correo (H-24 y H-2) lo manda la Edge Function `enviar-recordatorios`; el
+     WhatsApp, la `enviar-whatsapp`. Ninguna corre desde el panel: sus
+     interruptores son lo único que puede pararlas, así que se guardan en la base
+     y no en un useState. Cada barbería tiene el suyo (`barberia_id`), igual que
+     el nombre y el logo. */
 
-  const alternarEnvioAutomatico = async () => {
-    const anterior = Boolean(configuracion.recordatorios_activos)
+  /* Un valor por canal mientras dura la escritura: ausente = que mande el de la
+     base. Permite el cambio optimista (el switch se mueve al instante, sin
+     esperar un viaje a Supabase) y, si el `update` falla, volver al anterior sin
+     depender de otro refresco. Se limpia cuando la fila ya trae el valor nuevo,
+     para no quedarse pegado a un estado local. */
+  const [overrides, setOverrides] = useState({})
+  const envioActivo =
+    overrides.recordatorios_activos ?? Boolean(configuracion.recordatorios_activos)
+  const whatsappActivo =
+    overrides.whatsapp_activo ?? Boolean(configuracion.whatsapp_activo)
+
+  /* Sin fila en `configuracion` no hay nada que actualizar, y un UPDATE sin
+     destino afecta 0 filas SIN lanzar error (§10.5): el interruptor "guardaría"
+     y no guardaría. Por eso se desactiva y se avisa, en vez de fingir. */
+  const hayConfiguracion = Boolean(configuracion.id)
+
+  /* Los dos interruptores escriben en la misma tabla con el mismo criterio, así
+     que comparten esta función: `columna` es la que se guarda y `canal` solo
+     nombra el canal en el mensaje de error. */
+  const alternarInterruptor = async (columna, canal) => {
+    const anterior = overrides[columna] ?? Boolean(configuracion[columna])
     const nuevo = !anterior
 
+    const fijar = (valor) =>
+      setOverrides((prev) => {
+        if (valor === null) {
+          const siguiente = { ...prev }
+          delete siguiente[columna]
+          return siguiente
+        }
+        return { ...prev, [columna]: valor }
+      })
+
+    fijar(nuevo)
     setGuardandoInterruptor(true)
     setErrorMsg(null)
-    const { error } = await supabase
+    // `count` a propósito, igual que en `BarberiasSuper`: un UPDATE que RLS no
+    // deja pasar afecta 0 filas **sin lanzar error** (§10.5). Con solo el `error`
+    // el interruptor se movería y nadie se enteraría de que no guardó.
+    const { error, count } = await supabase
       .from('configuracion')
-      .update({ recordatorios_activos: nuevo })
-      .eq('id', 1)
-    setGuardandoInterruptor(false)
+      .update({ [columna]: nuevo }, { count: 'exact' })
+      .eq('barberia_id', barberiaId)
 
-    // El `error` sí se revisa a propósito: si un cliente (o una sesión sin rol)
-    // escribiera aquí, el UPDATE afectaría 0 filas sin lanzar error.
+    // El `error` se revisa por el mismo motivo: si un cliente (o una sesión sin
+    // rol) escribiera aquí, el UPDATE afectaría 0 filas sin lanzar error.
     if (error) {
-      setErrorMsg(`No se pudo cambiar el envío automático: ${error.message}`)
+      fijar(anterior)
+      setGuardandoInterruptor(false)
+      setErrorMsg(`No se pudo cambiar el envío automático por ${canal}: ${error.message}`)
       return
     }
-    refrescarConfiguracion()
+    if (!count) {
+      fijar(anterior)
+      setGuardandoInterruptor(false)
+      setErrorMsg('No se cambió nada. Revisa que tu cuenta siga siendo la de esta barbería.')
+      return
+    }
+    // El refresco va antes de soltar el estado: así el interruptor no parpadea
+    // a "apagado" mientras viaja el valor bueno.
+    await refrescarConfiguracion()
+    fijar(null)
+    setGuardandoInterruptor(false)
   }
 
   // Marcas de los correos automáticos ya enviados. Se muestran en texto pequeño,
@@ -533,6 +622,77 @@ export default function CitasAdmin() {
         {h24 && <span title={`Correo de 24 h enviado ${formatRecordatorio(cita.recordatorio_24h_enviado_at)}`}>24 h enviado</span>}
         {h24 && h2 && <span aria-hidden="true">·</span>}
         {h2 && <span title={`Correo de 2 h enviado ${formatRecordatorio(cita.recordatorio_2h_enviado_at)}`}>2 h enviado</span>}
+      </span>
+    )
+  }
+
+  /* Estado del envío automático de UNA cita, para la lista de la tarjeta: el
+     detalle completo de los DOS canales (enviado / pendiente / sin dato), que
+     `MarcasCorreo` de la tabla no enseña porque allí solo interesa lo que ya
+     salió. Una línea por canal: cuatro datos juntos en un renglón no se leen.
+     Sin pill y sin color como única señal: el ✓ y la palabra dicen el estado, el
+     tono solo atenúa lo que un interruptor apagado no va a resolver (§11.4). */
+  const EstadoRecordatorio = ({ cita, correoActivo, whatsappActivo }) => {
+    // Cancelada o completada: ya no hay nada que avisar. Hoy `paraRecordar` las
+    // filtra de entrada, pero el estado se decide aquí dentro para que ningún
+    // uso futuro pueda prometer un envío que la función no va a hacer.
+    const e = estadoDe(cita)
+    if (e === 'cancelada' || e === 'completada') return null
+
+    /* Una ventana (24 h o 2 h) de un canal: lo enviado con su fecha real en el
+       `title`, lo pendiente atenuado con la explicación si el canal está
+       apagado. `etiqueta` es lo que se ve (`24 h`, `WA 24 h`) y `ventana` lo
+       que va en el `title`, donde sí cabe el nombre del canal. */
+    const ventana = ({ etiqueta, ventana, canal, activo, marca }) =>
+      marca ? (
+        <span title={`${canal} de ${ventana} enviado ${formatRecordatorio(marca)}`}>
+          {etiqueta} ✓
+        </span>
+      ) : (
+        <span
+          className={activo ? '' : 'text-slate-400'}
+          title={activo ? undefined : `Envío automático por ${canal} apagado`}
+        >
+          {etiqueta} pendiente
+        </span>
+      )
+
+    /* Una línea completa de un canal, o el motivo por el que no va a llegar
+       nada. El prefijo `WA ` distingue el WhatsApp del correo. El filtro de
+       "sin dato" copia el de las funciones del servidor (§10.7): vacio o en
+       blanco, nada más — un teléfono que no se puede normalizar lo reporta y
+       libera la marca la Edge Function, no esta etiqueta. */
+    const lineaCanal = ({ prefijo, canal, activo, faltaDato, textoFalta, marca24, marca2h }) =>
+      faltaDato ? (
+        <span className="text-slate-400">{textoFalta}</span>
+      ) : (
+        <>
+          {ventana({ etiqueta: `${prefijo}24 h`, ventana: '24 h', canal, activo, marca: marca24 })}
+          <span aria-hidden="true">·</span>
+          {ventana({ etiqueta: `${prefijo}2 h`, ventana: '2 h', canal, activo, marca: marca2h })}
+        </>
+      )
+
+    const vacio = (valor) => !valor || !String(valor).trim()
+
+    return (
+      <span className="mt-1 block text-[10px] uppercase tracking-wide text-slate">
+        <span className="flex flex-wrap items-center gap-x-1.5">
+          {lineaCanal({
+            prefijo: '', canal: 'correo', activo: correoActivo,
+            faltaDato: vacio(cita.correo), textoFalta: 'Sin correo',
+            marca24: cita.recordatorio_24h_enviado_at,
+            marca2h: cita.recordatorio_2h_enviado_at,
+          })}
+        </span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5">
+          {lineaCanal({
+            prefijo: 'WA ', canal: 'WhatsApp', activo: whatsappActivo,
+            faltaDato: vacio(cita.telefono), textoFalta: 'Sin teléfono',
+            marca24: cita.recordatorio_wa_24h_enviado_at,
+            marca2h: cita.recordatorio_wa_2h_enviado_at,
+          })}
+        </span>
       </span>
     )
   }
@@ -1202,55 +1362,58 @@ export default function CitasAdmin() {
         </div>
 
         {/* 5.2 Recordatorios */}
-        {/* Hay DOS canales, y son independientes:
-             · MANUAL: el botón abre WhatsApp con el mensaje listo y marca
-               `recordatorio_enviado_at`. Lo hace el barbero, cuando quiere.
-             · AUTOMÁTICO: la Edge Function `enviar-recordatorios` envía un
-               correo 24 h y otro 2 h antes de la cita y marca sus propias
-               columnas. La manda pg_cron cada hora y para con este interruptor.
-             Ambos conviven: el manual es el respaldo cuando el automático no
-             llegó (sin correo en la cita, fallo de Resend, dominio sin verificar). */}
+        {/* Hay TRES canales, y son independientes:
+             · CORREO AUTOMÁTICO: la Edge Function `enviar-recordatorios` envía un
+               correo 24 h y otro 2 h antes de la cita y marca sus columnas
+               (`recordatorio_24h_enviado_at`, `recordatorio_2h_enviado_at`).
+             · WHATSAPP AUTOMÁTICO: la `enviar-whatsapp` hace lo mismo por WhatsApp
+               y marca `recordatorio_wa_24h_enviado_at` y
+               `recordatorio_wa_2h_enviado_at`, en ventanas propias.
+               Los dos los manda pg_cron y los para su interruptor.
+             · WHATSAPP MANUAL: el botón abre WhatsApp con el mensaje listo y
+               marca `recordatorio_enviado_at`. Lo hace el barbero, cuando quiere.
+             Enviar por un canal no silencia a los otros: cada uno filtra por sus
+             propias columnas. El manual es el respaldo cuando un automático no
+             llega (sin correo o sin teléfono, fallo del proveedor, plantillas). */}
         <div className="rounded-xl border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-5 py-4">
             <h3 className="font-serif text-base text-navy">Recordatorios</h3>
             <p className="mt-0.5 text-xs text-slate">
-              Correo automático <strong className="text-navy">24 h</strong> y{' '}
-              <strong className="text-navy">2 h</strong> antes de cada cita
+              Automáticos <strong className="text-navy">24 h</strong> y{' '}
+              <strong className="text-navy">2 h</strong> antes de cada cita, por correo o WhatsApp
             </p>
           </div>
           <div className="px-5 py-5">
-            {/* Interruptor maestro. Es el mismo control que usan BarberosAdmin y
-                BarberoForm: `role="switch"` + `aria-checked`, pista con knob que
-                viaja, y el texto visible hace de nombre accesible. */}
-            <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={Boolean(configuracion.recordatorios_activos)}
-                disabled={guardandoInterruptor}
-                onClick={alternarEnvioAutomatico}
-                className="flex items-center gap-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                    configuracion.recordatorios_activos ? 'bg-primary' : 'bg-slate-300'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                      configuracion.recordatorios_activos ? 'translate-x-4' : 'translate-x-1'
-                    }`}
-                  />
-                </span>
-                <span className={configuracion.recordatorios_activos ? 'text-navy' : 'text-slate'}>
-                  Envío automático
-                </span>
-              </button>
-              <p className="mt-2 text-xs text-slate">
-                {configuracion.recordatorios_activos
-                  ? 'Activo: se revisa cada hora y se envía a las citas que entren en la ventana de 24 h o de 2 h. Necesita el dominio del remitente verificado en Resend.'
-                  : 'Apagado: no se envía ningún correo. Las citas de abajo siguen disponibles para el recordatorio manual por WhatsApp.'}
-              </p>
+            {/* Los dos canales automáticos. Van en dos columnas desde `sm` porque son
+                la misma decisión tomada dos veces (encender / apagar el envío),
+                no dos pasos: leerlos de un vistazo es el punto. Debajo de cada
+                interruptor va su ayuda, y el de WhatsApp avisa del costo por
+                mensaje, que es la duda real de quien lo enciende. Los dos se
+                apagan mientras carga la fila, mientras escriben y si la
+                barbería no tiene configuración que actualizar. */}
+            <div className="mb-5 grid gap-3 sm:grid-cols-2">
+              <InterruptorCanal
+                etiqueta="Envío automático"
+                activo={envioActivo}
+                bloqueado={guardandoInterruptor || cargandoConfiguracion || !hayConfiguracion}
+                onToggle={() => alternarInterruptor('recordatorios_activos', 'correo')}
+                ayuda={
+                  hayConfiguracion
+                    ? 'Se envía un correo al cliente 24 horas y 2 horas antes de su cita. Solo a citas con correo.'
+                    : 'Falta la configuración de la barbería'
+                }
+              />
+              <InterruptorCanal
+                etiqueta="WhatsApp automático"
+                activo={whatsappActivo}
+                bloqueado={guardandoInterruptor || cargandoConfiguracion || !hayConfiguracion}
+                onToggle={() => alternarInterruptor('whatsapp_activo', 'WhatsApp')}
+                ayuda={
+                  hayConfiguracion
+                    ? 'Envía un WhatsApp al cliente 24 horas y 2 horas antes de su cita. Puede tener costo por mensaje.'
+                    : 'Falta la configuración de la barbería'
+                }
+              />
             </div>
 
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate">
@@ -1281,7 +1444,11 @@ export default function CitasAdmin() {
                             </span>
                           )}
                         </p>
-                        <MarcasCorreo cita={c} />
+                        <EstadoRecordatorio
+                          cita={c}
+                          correoActivo={envioActivo}
+                          whatsappActivo={whatsappActivo}
+                        />
                       </div>
                       <button
                         onClick={() => recordarCita(c)}
@@ -1301,10 +1468,9 @@ export default function CitasAdmin() {
             <div className="flex items-start gap-3 rounded-lg bg-slate-50 p-3">
               <span className="mt-0.5 shrink-0 text-slate-400"><IconoBandeja /></span>
               <p className="text-xs text-slate">
-                El botón "Recordar" abre WhatsApp con el mensaje listo y marca la
-                cita por separado. El correo automático solo usa sus propias
-                columnas, así que un recordatorio enviado por un canal no silencia
-                al otro.
+                Cada canal usa sus propias columnas de marca, así que enviar por
+                uno no silencia a los otros: el botón "Recordar" es el que
+                marca la cita a mano, y el WhatsApp automático no lo cuenta.
               </p>
             </div>
           </div>

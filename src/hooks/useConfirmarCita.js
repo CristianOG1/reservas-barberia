@@ -12,9 +12,12 @@ import { supabase } from '../supabaseClient'
  *   setCitasSemana en ResumenPage).
  * @param {(msg: string | null) => void} [setErrorMsg]
  *   Setter opcional para mostrar el error devuelto por Supabase.
+ * @param {string | null} [barberiaId]
+ *   Barbería del panel. Acota el UPDATE a las citas de esa barbería (además de
+ *   la RLS, que ya exige `barberia_id = barberia_del_usuario()`).
  * @returns {(cita: any) => Promise<void>}
  */
-export function useConfirmarCita(setCitas, setErrorMsg) {
+export function useConfirmarCita(setCitas, setErrorMsg, barberiaId) {
   return async (cita) => {
     const anterior = cita.estado || 'pendiente'
     if (anterior === 'confirmada') return
@@ -27,6 +30,7 @@ export function useConfirmarCita(setCitas, setErrorMsg) {
       .from('citas')
       .update({ estado: 'confirmada' })
       .eq('id', cita.id)
+      .eq('barberia_id', barberiaId)
 
     if (error) {
       // Revierte el cambio optimista y avisa.

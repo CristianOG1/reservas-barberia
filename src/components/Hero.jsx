@@ -1,10 +1,14 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useBarberia } from '../context/useBarberia'
 import { rutaInicioPorRol } from '../utils/rutaInicioPorRol'
 
 export default function Hero() {
   const navigate = useNavigate()
   const { session, rol } = useAuth()
+  // El nombre del negocio sale de la barbería resuelta por el contexto.
+  const { barberia } = useBarberia()
+  const nombreBarberia = barberia?.nombre || 'Nombre'
 
   // Mismo criterio que el Navbar y el login, vía el helper compartido.
   const user = session?.user
@@ -83,7 +87,7 @@ export default function Hero() {
 
         {/* Marca de agua tipo logo, arriba a la derecha */}
         <div className="absolute top-6 right-6 text-right">
-          <p className="text-white text-2xl font-light italic">Nombre</p>
+          <p className="text-white text-2xl font-light italic">{nombreBarberia}</p>
           <p className="text-neutral-300 text-xs tracking-wide">Barberia</p>
         </div>
 

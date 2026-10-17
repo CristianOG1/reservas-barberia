@@ -4,6 +4,7 @@
 // Barberos y Citas (fondo slate-50, superficies blancas, acento primary).
 import { useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
+import { useBarberia } from '../../context/useBarberia'
 import ServicioForm from './ServicioForm'
 
 /* ===== Configuración ===== */
@@ -98,6 +99,10 @@ function IconoReloj() {
 }
 
 export default function ServiciosAdmin() {
+  // El catálogo es de UNA barbería: se filtra por su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
+
   const [servicios, setServicios] = useState([])
   const [cargando, setCargando] = useState(true)
   const [mostrarForm, setMostrarForm] = useState(false)
@@ -108,12 +113,16 @@ export default function ServiciosAdmin() {
   const [pagina, setPagina] = useState(1)
 
   useEffect(() => {
-    cargarServicios()
-  }, [])
+    if (barberiaId) cargarServicios()
+  }, [barberiaId])
 
   const cargarServicios = async () => {
     setCargando(true)
-    const { data } = await supabase.from('servicios').select('*').order('created_at', { ascending: false })
+    const { data } = await supabase
+      .from('servicios')
+      .select('*')
+      .eq('barberia_id', barberiaId)
+      .order('created_at', { ascending: false })
     setServicios(data || [])
     setCargando(false)
     setPagina(1)
@@ -121,7 +130,7 @@ export default function ServiciosAdmin() {
 
   const handleEliminar = async (id) => {
     if (!confirm('¿Eliminar este servicio?')) return
-    await supabase.from('servicios').delete().eq('id', id)
+    await supabase.from('servicios').delete().eq('id', id).eq('barberia_id', barberiaId)
     cargarServicios()
   }
 

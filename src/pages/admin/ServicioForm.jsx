@@ -4,9 +4,13 @@
 // del panel. `soloLectura` abre el mismo formulario en modo detalle.
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
+import { useBarberia } from '../../context/useBarberia'
 
 export default function ServicioForm({ servicio, categorias = [], soloLectura = false, onClose, onGuardado }) {
   const esEdicion = !!servicio
+  // La imagen nueva va a la carpeta de esta barbería y el alta lleva su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
 
   const [form, setForm] = useState({
     nombre: servicio?.nombre || '',
@@ -32,7 +36,7 @@ export default function ServicioForm({ servicio, categorias = [], soloLectura = 
   const subirImagenSiHay = async () => {
     if (!archivoImagen) return servicio?.imagen || null // no cambió, deja la que ya tenía
 
-    const nombreArchivo = `servicios/${Date.now()}-${archivoImagen.name}`
+    const nombreArchivo = `${barberiaId}/servicios/${Date.now()}-${archivoImagen.name}`
     const { error } = await supabase.storage.from('imagenes').upload(nombreArchivo, archivoImagen)
     if (error) throw error
 
@@ -51,7 +55,7 @@ export default function ServicioForm({ servicio, categorias = [], soloLectura = 
 
       const { error } = esEdicion
         ? await supabase.from('servicios').update(payload).eq('id', servicio.id)
-        : await supabase.from('servicios').insert([payload])
+        : await supabase.from('servicios').insert([{ ...payload, barberia_id: barberiaId }])
 
       if (error) throw error
       onGuardado()

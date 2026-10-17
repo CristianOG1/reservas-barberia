@@ -5,9 +5,13 @@
 // También se reutiliza en modo edición para "Reprogramar" (misma forma, update).
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
+import { useBarberia } from '../../context/useBarberia'
 
 export default function CitaManualForm({ cita, servicios, barberos, onClose, onGuardado }) {
   const esEdicion = !!cita
+  // La cita pertenece a la barbería del panel donde se está capturando.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
 
   const [form, setForm] = useState({
     nombre: cita?.nombre || '',
@@ -59,7 +63,7 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
       // crea el flujo público. En edición NO se toca `estado`.
       const peticion = esEdicion
         ? supabase.from('citas').update(payload).eq('id', cita.id)
-        : supabase.from('citas').insert([{ ...payload, estado: 'pendiente' }])
+        : supabase.from('citas').insert([{ ...payload, estado: 'pendiente', barberia_id: barberiaId }])
 
       const { error } = await peticion
       if (error) throw error

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useBarberia } from '../../context/useBarberia'
 import { supabase } from '../../supabaseClient'
 
 // Mismos turnos que BookingPage. Horas en 24 h; el AM/PM es solo visual.
@@ -65,6 +66,10 @@ function Modal({ titulo, onCerrar, children }) {
 export default function CitasCliente() {
   const { session } = useAuth()
   const userId = session?.user?.id
+  // Las citas que se ven aquí son las de la barbería del sitio abierto: un
+  // cliente puede tener citas en más de una barbería.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
 
   const [citas, setCitas] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -84,15 +89,17 @@ export default function CitasCliente() {
   const hoy = fechaISO(reloj)
   const ahoraMin = reloj.getHours() * 60 + reloj.getMinutes()
 
-  /* ---- Cargar solo las citas del usuario logueado ----
-     RLS ya filtra por cliente_id; el .eq es redundante pero deja la intención clara.
+  /* ---- Cargar solo las citas del usuario logueado en ESTA barbería ----
+     RLS ya filtra por cliente_id; el .eq de barbería acota además a la
+     barbería del sitio abierto.
      `barberos(nombre)` requiere que citas.barbero_id sea FK a barberos.id. */
   const cargarCitas = useCallback(async () => {
-    if (!userId) return
+    if (!userId || !barberiaId) return
     const { data, error } = await supabase
       .from('citas')
       .select('id, fecha, hora, servicio, productos, total, estado, barbero_id, barberos(nombre)')
       .eq('cliente_id', userId)
+      .eq('barberia_id', barberiaId)
       .order('fecha', { ascending: true })
       .order('hora', { ascending: true })
 
@@ -104,7 +111,7 @@ export default function CitasCliente() {
       setCitas(data || [])
     }
     setCargando(false)
-  }, [userId])
+  }, [userId, barberiaId])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -116,14 +123,14 @@ export default function CitasCliente() {
     if (!citaReagendar || !nuevaFecha) return
     let vigente = true
     supabase
-      .rpc('horas_ocupadas', { fecha_consulta: nuevaFecha, barbero_id: citaReagendar.barbero_id || null })
+      .rpc('horas_ocupadas', { fecha_consulta: nuevaFecha, barberia_id: barberiaId, barbero_id: citaReagendar.barbero_id || null })
       .then(({ data, error }) => {
         if (!vigente) return
         if (error) console.error(error)
         setHorasOcupadas((data || []).map((h) => recortarHora(h)))
       })
     return () => { vigente = false }
-  }, [citaReagendar, nuevaFecha])
+  }, [citaReagendar, nuevaFecha, barberiaId])
 
   const { proximas, historial } = useMemo(() => {
     const ahora = new Date()
@@ -193,7 +200,7 @@ export default function CitasCliente() {
         setNuevaHora(null)
         setError('Ese horario acaba de ser tomado, elige otro.')
         supabase
-          .rpc('horas_ocupadas', { fecha_consulta: nuevaFecha, barbero_id: citaReagendar.barbero_id || null })
+          .rpc('horas_ocupadas', { fecha_consulta: nuevaFecha, barberia_id: barberiaId, barbero_id: citaReagendar.barbero_id || null })
           .then(({ data }) => setHorasOcupadas((data || []).map((h) => recortarHora(h))))
       } else {
         setError('No se pudo reagendar la cita. Intenta de nuevo.')
