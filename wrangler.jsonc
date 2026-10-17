@@ -8,5 +8,6 @@
   "routes": [
     { "pattern": "gools.com.mx/*", "zone_name": "gools.com.mx" },
     { "pattern": "*.gools.com.mx/*", "zone_name": "gools.com.mx" }
-  ]
+  ],
+  "previews": {}
 }
