@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
+import { useBarberia } from '../context/useBarberia'
 
 export default function ServicesPage() {
   const navigate = useNavigate()
+  // El catálogo es de UNA barbería: todo se filtra por su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
 
   const [servicios, setServicios] = useState([])
   const [cargando, setCargando] = useState(true)
 
   useEffect(() => {
-    cargarServicios()
-  }, [])
+    if (barberiaId) cargarServicios()
+  }, [barberiaId])
 
   const cargarServicios = async () => {
     setCargando(true)
@@ -18,6 +22,7 @@ export default function ServicesPage() {
     const { data, error } = await supabase
       .from('servicios')
       .select('*')
+      .eq('barberia_id', barberiaId)
 
        if (error) {
         setServicios([])

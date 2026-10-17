@@ -3,9 +3,13 @@
 // es la que ya existía: solo cambió la presentación al tema claro del panel.
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
+import { useBarberia } from '../../context/useBarberia'
 
 export default function ProductoForm({ producto, categorias = [], onClose, onGuardado }) {
   const esEdicion = !!producto
+  // La imagen nueva va a la carpeta de esta barbería y el alta lleva su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
 
   const [form, setForm] = useState({
     nombre: producto?.nombre || '',
@@ -30,7 +34,7 @@ export default function ProductoForm({ producto, categorias = [], onClose, onGua
   const subirImagenSiHay = async () => {
     if (!archivoImagen) return producto?.imagen || null // no cambió, deja la que ya tenía
 
-    const nombreArchivo = `productos/${Date.now()}-${archivoImagen.name}`
+    const nombreArchivo = `${barberiaId}/productos/${Date.now()}-${archivoImagen.name}`
     const { error } = await supabase.storage.from('imagenes').upload(nombreArchivo, archivoImagen)
     if (error) throw error
 
@@ -49,7 +53,7 @@ export default function ProductoForm({ producto, categorias = [], onClose, onGua
 
       const { error } = esEdicion
         ? await supabase.from('productos').update(payload).eq('id', producto.id)
-        : await supabase.from('productos').insert([payload])
+        : await supabase.from('productos').insert([{ ...payload, barberia_id: barberiaId }])
 
       if (error) throw error
       onGuardado()

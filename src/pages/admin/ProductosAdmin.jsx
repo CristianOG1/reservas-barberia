@@ -1,6 +1,7 @@
 // src/pages/admin/ProductosAdmin.jsx
 import { useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
+import { useBarberia } from '../../context/useBarberia'
 import ProductoForm from './ProductoForm'
 
 /* ===== Íconos ===== */
@@ -52,6 +53,10 @@ const ITEMS_POR_PAGINA = 6
 const STOCK_MINIMO = 5
 
 export default function ProductosAdmin() {
+  // El catálogo es de UNA barbería: se filtra por su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
+
   const [productos, setProductos] = useState([])
   const [cargando, setCargando] = useState(true)
   const [mostrarForm, setMostrarForm] = useState(false)
@@ -61,12 +66,16 @@ export default function ProductosAdmin() {
   const [pagina, setPagina] = useState(1)
 
   useEffect(() => {
-    cargarProductos()
-  }, [])
+    if (barberiaId) cargarProductos()
+  }, [barberiaId])
 
   const cargarProductos = async () => {
     setCargando(true)
-    const { data } = await supabase.from('productos').select('*').order('created_at', { ascending: false })
+    const { data } = await supabase
+      .from('productos')
+      .select('*')
+      .eq('barberia_id', barberiaId)
+      .order('created_at', { ascending: false })
     setProductos(data || [])
     setCargando(false)
     setPagina(1)
@@ -74,7 +83,7 @@ export default function ProductosAdmin() {
 
   const handleEliminar = async (id) => {
     if (!confirm('¿Eliminar este producto?')) return
-    await supabase.from('productos').delete().eq('id', id)
+    await supabase.from('productos').delete().eq('id', id).eq('barberia_id', barberiaId)
     cargarProductos()
   }
 

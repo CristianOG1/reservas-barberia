@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useBarberia } from '../context/useBarberia'
 import { supabase } from '../supabaseClient'
 
 const PASOS = ['Servicio', 'Fecha & Hora', 'Tus Datos']
@@ -98,6 +99,9 @@ export default function BookingPage() {
   const navigate = useNavigate()
   // `cargando`: mientras Supabase recupera la sesión guardada (al recargar la página).
   const { session, cargando: cargandoSesion } = useAuth()
+  // La cita pertenece a UNA barbería: lecturas, RPC e insert llevan su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
 
   // Se lee una sola vez al montar: si viene de /login trae lo que ya había elegido.
   const [borrador] = useState(leerBorrador)
@@ -145,10 +149,12 @@ export default function BookingPage() {
 
   /* ---- Servicios desde la base de datos ---- */
   useEffect(() => {
+    if (!barberiaId) return
     let vigente = true
     supabase
       .from('servicios')
       .select('nombre, categoria, descripcion, costo, duracion, imagen')
+      .eq('barberia_id', barberiaId)
       .order('nombre', { ascending: true })
       .then(({ data, error }) => {
         if (!vigente) return
@@ -157,17 +163,19 @@ export default function BookingPage() {
         setCargandoServicios(false)
       })
     return () => { vigente = false }
-  }, [])
+  }, [barberiaId])
 
   /* ---- Productos desde la base de datos ----
      La lectura pública de `productos` para `anon` ya existe (política "Lectura
      publica"). Si la consulta falla, la lista queda vacía y la sección entera no
      se muestra: los productos son opcionales y no deben romper el flujo. */
   useEffect(() => {
+    if (!barberiaId) return
     let vigente = true
     supabase
       .from('productos')
       .select('id, nombre, categoria, descripcion, precio, imagen')
+      .eq('barberia_id', barberiaId)
       .order('created_at', { ascending: false })
       .then(({ data, error }) => {
         if (!vigente) return
@@ -175,17 +183,20 @@ export default function BookingPage() {
         setProductos(data || [])
       })
     return () => { vigente = false }
-  }, [])
+  }, [barberiaId])
 
   /* ---- Barberos disponibles desde la base de datos ----
      La lectura pública de `barberos` para `anon` ya existe (política "Lectura
-     publica"). Solo se piden los que están `disponible = true`. */
+     publica"). Solo se piden los que están `disponible = true` y son de la
+     barbería actual. */
   useEffect(() => {
+    if (!barberiaId) return
     let vigente = true
     supabase
       .from('barberos')
       .select('id, nombre, especialidad, imagen')
       .eq('disponible', true)
+      .eq('barberia_id', barberiaId)
       .order('created_at', { ascending: true })
       .then(({ data, error }) => {
         if (!vigente) return
@@ -196,7 +207,7 @@ export default function BookingPage() {
         setCargandoBarberos(false)
       })
     return () => { vigente = false }
-  }, [])
+  }, [barberiaId])
 
   /* ---- Horas ya ocupadas ----
      Se consulta por RPC: `citas` no es legible por `anon` (expondría nombre,
@@ -205,11 +216,12 @@ export default function BookingPage() {
 
      Con barbero concreto devuelve las horas ocupadas de ese barbero; con
      "Cualquier barbero" devuelve las horas en las que ya no queda ninguno
-     disponible. */
+     disponible. Siempre dentro de la barbería actual. */
   const cargarHorasOcupadas = async (fecha, barberoId) => {
-    if (!fecha) return
+    if (!fecha || !barberiaId) return
     const { data, error } = await supabase.rpc('horas_ocupadas', {
       fecha_consulta: fecha,
+      barberia_id: barberiaId,
       barbero_id: barberoId,
     })
     if (error) {
@@ -221,12 +233,13 @@ export default function BookingPage() {
   }
 
   useEffect(() => {
-    // Sin fecha no hay nada que pedir. Las horas se limpian al elegir el día
-    // (handler), no aquí, para no llamar a setState de forma síncrona en el efecto.
-    if (!fechaElegida) return
+    // Sin fecha (o sin barbería) no hay nada que pedir. Las horas se limpian al
+    // elegir el día (handler), no aquí, para no llamar a setState de forma
+    // síncrona en el efecto.
+    if (!fechaElegida || !barberiaId) return
     let vigente = true
     supabase
-      .rpc('horas_ocupadas', { fecha_consulta: fechaElegida, barbero_id: barberoIdElegido })
+      .rpc('horas_ocupadas', { fecha_consulta: fechaElegida, barberia_id: barberiaId, barbero_id: barberoIdElegido })
       .then(({ data, error }) => {
         if (!vigente) return
         if (error) {
@@ -237,7 +250,7 @@ export default function BookingPage() {
         setHorasOcupadas((data || []).map((h) => String(h).slice(0, 5)))
       })
     return () => { vigente = false }
-  }, [fechaElegida, barberoIdElegido])
+  }, [fechaElegida, barberoIdElegido, barberiaId])
 
   /* ---- Calendario: 7 días de la semana, generado desde la fecha real ---- */
   const dias = useMemo(() => {
@@ -357,6 +370,7 @@ export default function BookingPage() {
       const { data, error } = await supabase.rpc('asignar_barbero', {
         fecha_consulta: fechaElegida,
         hora_consulta: horaElegida,
+        barberia_id: barberiaId,
       })
       if (error) console.error(error)
       barberoId = data || null
@@ -376,6 +390,7 @@ export default function BookingPage() {
       fecha: fechaElegida,          // 'YYYY-MM-DD' en hora local
       hora: horaElegida,            // 'HH:MM' 24 h
       total,
+      barberia_id: barberiaId,      // la cita pertenece a esta barbería
       barbero_id: barberoId,
       cliente_id: session.user.id,
     }])

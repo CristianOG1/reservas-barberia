@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useBarberia } from '../context/useBarberia'
 import { rutaInicioPorRol } from '../utils/rutaInicioPorRol'
 
 // Íconos del menú móvil. SVG inline: el proyecto no usa librerías de iconos.
@@ -33,6 +34,9 @@ const enlaces = [
 export default function Navbar() {
   const navigate = useNavigate()
   const { session, logout, rol } = useAuth()
+  // El nombre del negocio sale de la barbería resuelta por el contexto.
+  const { barberia } = useBarberia()
+  const nombreBarberia = barberia?.nombre || 'Nombre Barberia'
 
   // Extraemos datos del usuario si existe sesión
   const user = session?.user
@@ -81,7 +85,7 @@ export default function Navbar() {
             K
           </div>
           <div>
-            <p className="text-white text-sm font-semibold leading-tight">Nombre Barberia</p>
+            <p className="text-white text-sm font-semibold leading-tight">{nombreBarberia}</p>
             <p className="text-neutral-400 text-xs leading-tight">Cortes de Cabello y Barba</p>
           </div>
         </div>

@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../supabaseClient'
+import { useBarberia } from '../../context/useBarberia'
 import BarberoForm from './BarberoForm'
 
 /* ===== Íconos ===== */
@@ -76,6 +77,10 @@ function Stars({ rating, total }) {
 }
 
 export default function BarberosAdmin() {
+  // El equipo es de UNA barbería: se filtra por su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
+
   const [barberos, setBarberos] = useState([])
   const [citasHoy, setCitasHoy] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -86,8 +91,8 @@ export default function BarberosAdmin() {
   const [errorMsg, setErrorMsg] = useState(null)
 
   useEffect(() => {
-    cargarDatos()
-  }, [])
+    if (barberiaId) cargarDatos()
+  }, [barberiaId])
 
   const cargarDatos = async () => {
     setCargando(true)
@@ -95,8 +100,8 @@ export default function BarberosAdmin() {
     const hoy = new Date().toISOString().split('T')[0]
 
     const [barberosRes, citasRes] = await Promise.all([
-      supabase.from('barberos').select('*').order('created_at', { ascending: false }),
-      supabase.from('citas').select('*').eq('fecha', hoy),
+      supabase.from('barberos').select('*').eq('barberia_id', barberiaId).order('created_at', { ascending: false }),
+      supabase.from('citas').select('*').eq('barberia_id', barberiaId).eq('fecha', hoy),
     ])
 
     setBarberos(barberosRes.data || [])
@@ -106,7 +111,7 @@ export default function BarberosAdmin() {
 
   const handleEliminar = async (id) => {
     if (!confirm('¿Eliminar este barbero?')) return
-    await supabase.from('barberos').delete().eq('id', id)
+    await supabase.from('barberos').delete().eq('id', id).eq('barberia_id', barberiaId)
     cargarDatos()
   }
 
@@ -124,6 +129,7 @@ export default function BarberosAdmin() {
       .from('barberos')
       .update({ disponible: nuevoValor })
       .eq('id', barbero.id)
+      .eq('barberia_id', barberiaId)
       .select('id, disponible')
 
     const guardado = !error && data?.length === 1 && data[0].disponible === nuevoValor

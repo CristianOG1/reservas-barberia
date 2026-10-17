@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
+import { useBarberia } from '../context/useBarberia'
 
 // `duracion` es TEXT en la base de datos: puede venir '30' o '50 min'.
 function formatoDuracion(valor) {
@@ -16,14 +17,17 @@ function formatoPrecio(valor) {
 
 export default function Servicios() {
   const navigate = useNavigate()
+  // El catálogo es de UNA barbería: todo se filtra por su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
 
   const [servicios, setServicios] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(false)
 
   useEffect(() => {
-    cargarServicios()
-  }, [])
+    if (barberiaId) cargarServicios()
+  }, [barberiaId])
 
   const cargarServicios = async () => {
     setCargando(true)
@@ -32,6 +36,7 @@ export default function Servicios() {
     const { data, error: errorSupabase } = await supabase
       .from('servicios')
       .select('*')
+      .eq('barberia_id', barberiaId)
       .order('created_at', { ascending: true })
 
     if (errorSupabase) {

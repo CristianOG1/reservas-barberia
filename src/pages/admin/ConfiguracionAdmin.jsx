@@ -1,10 +1,11 @@
 // src/pages/admin/ConfiguracionAdmin.jsx
 // Datos de la barbería: nombre, ubicación, logo y descripción.
-// La tabla tiene una sola fila (id = 1), así que todo alta/edición es un upsert
-// sobre esa misma fila.
+// La tabla tiene UNA fila por barbería, así que todo alta/edición es un upsert
+// sobre su fila (por `barberia_id`).
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { useConfiguracion } from '../../context/useConfiguracion'
+import { useBarberia } from '../../context/useBarberia'
 
 const MAX_IMAGEN_BYTES = 2 * 1024 * 1024 // 2 MB
 const CARPETA = 'configuracion'
@@ -35,6 +36,9 @@ export default function ConfiguracionAdmin() {
 
 function FormularioConfiguracion({ configuracion }) {
   const { refrescar } = useConfiguracion()
+  // La configuración es de UNA barbería: el upsert va contra su fila.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
 
   const [form, setForm] = useState(() => ({
     nombre: configuracion.nombre || '',
@@ -79,7 +83,7 @@ function FormularioConfiguracion({ configuracion }) {
   const subirLogoSiHay = async () => {
     if (!archivoLogo) return logoActual || null
 
-    const nombreArchivo = `${CARPETA}/${Date.now()}-${archivoLogo.name}`
+    const nombreArchivo = `${barberiaId}/${CARPETA}/${Date.now()}-${archivoLogo.name}`
     const { error } = await supabase.storage.from('imagenes').upload(nombreArchivo, archivoLogo)
     if (error) throw error
 
@@ -96,9 +100,11 @@ function FormularioConfiguracion({ configuracion }) {
     try {
       const logo = await subirLogoSiHay()
 
+      // Una fila por barbería: el conflicto se resuelve por `barberia_id`, no por
+      // un `id = 1` fijo (que ya no existe desde la migración multi-barbería).
       const { error } = await supabase.from('configuracion').upsert(
         {
-          id: 1,
+          barberia_id: barberiaId,
           nombre: form.nombre,
           estado: form.estado || null,
           municipio: form.municipio || null,
@@ -106,7 +112,7 @@ function FormularioConfiguracion({ configuracion }) {
           descripcion: form.descripcion || null,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: 'id' }
+        { onConflict: 'barberia_id' }
       )
       if (error) throw error
 

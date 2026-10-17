@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { useConfirmarCita } from '../../hooks/useConfirmarCita'
+import { useBarberia } from '../../context/useBarberia'
 
 /* ========= DATOS DE EJEMPLO — reemplazar con lógica real ========= */
 
@@ -62,6 +63,10 @@ function IconoFiltro() {
 }
 
 export default function ResumenPage() {
+  // El resumen es de UNA barbería: todo se filtra por su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
+
   const [totales, setTotales] = useState({ servicios: 0, productos: 0, barberosActivos: 0, citas: 0 })
   const [citasSemana, setCitasSemana] = useState([])
   const [productos, setProductos] = useState([])
@@ -71,20 +76,20 @@ export default function ResumenPage() {
   const [cargando, setCargando] = useState(true)
   const [errorMsg, setErrorMsg] = useState(null)
   // Lógica de confirmación compartida con Gestión de Citas (§hook).
-  const confirmarCita = useConfirmarCita(setCitasSemana, setErrorMsg)
+  const confirmarCita = useConfirmarCita(setCitasSemana, setErrorMsg, barberiaId)
 
   useEffect(() => {
-    cargarDatos()
-  }, [])
+    if (barberiaId) cargarDatos()
+  }, [barberiaId])
 
   const cargarDatos = async () => {
     // count: 'exact', head: true → solo trae el número, no las filas
     const [serviciosRes, productosRes, barberosActivos, citasRes, barberosRes] = await Promise.all([
-      supabase.from('servicios').select('*'),
-      supabase.from('productos').select('*', { count: 'exact', head: true }),
-      supabase.from('barberos').select('*', { count: 'exact', head: true }).eq('disponible', true),
-      supabase.from('citas').select('*', { count: 'exact', head: true }),
-      supabase.from('barberos').select('*').order('created_at', { ascending: true }),
+      supabase.from('servicios').select('*').eq('barberia_id', barberiaId),
+      supabase.from('productos').select('*', { count: 'exact', head: true }).eq('barberia_id', barberiaId),
+      supabase.from('barberos').select('*', { count: 'exact', head: true }).eq('disponible', true).eq('barberia_id', barberiaId),
+      supabase.from('citas').select('*', { count: 'exact', head: true }).eq('barberia_id', barberiaId),
+      supabase.from('barberos').select('*').eq('barberia_id', barberiaId).order('created_at', { ascending: true }),
     ])
 
     setTotales({
@@ -103,6 +108,7 @@ export default function ResumenPage() {
     const { data: proximas } = await supabase
       .from('citas')
       .select('*')
+      .eq('barberia_id', barberiaId)
       .gte('fecha', hoy)
       .lte('fecha', enUnaSemana)
       .order('fecha', { ascending: true })
@@ -113,6 +119,7 @@ export default function ResumenPage() {
     const { data: productosData } = await supabase
       .from('productos')
       .select('*')
+      .eq('barberia_id', barberiaId)
       .order('created_at', { ascending: false })
 
     setProductos(productosData || [])
@@ -121,6 +128,7 @@ export default function ResumenPage() {
     const { data: citasSemanaData } = await supabase
       .from('citas')
       .select('servicio')
+      .eq('barberia_id', barberiaId)
       .gte('fecha', hoy)
       .lte('fecha', enUnaSemana)
 

@@ -3,13 +3,20 @@
  * Navbar y Hero, para que no decidan el destino por su cuenta y el resultado
  * sea siempre el mismo.
  *
- * - 'superadmin' y 'admin' → '/admin' (el dashboard multi-barbería del
- *   superadmin todavía no existe, así que entra al panel de la barbería).
+ * - 'superadmin' → '/superadmin' (su panel multi-barbería, fuera de toda
+ *   barbería: entra por el dominio principal, sin slug).
+ * - 'admin' → '/admin' (el panel de su barbería).
  * - 'cliente' → '/cliente'.
- * - Rol null, undefined o cualquier valor desconocido → '/cliente'.
- *   Es el fallo a salvo: si no se pudo leer el rol se trata como cliente (§5),
- *   que es la opción que menos privilegios concede.
+ * - Cualquier otro valor, incluido null/undefined, cae en '/admin', que es el
+ *   comportamiento que ya tenía el proyecto: al no poder leer el rol la app
+ *   manda al visitante al login del panel, no a una zona de cliente que no le
+ *   corresponde.
+ *
+ * Si añades un rol nuevo, actualízalo aquí **y** las listas `roles` de
+ * `src/App.jsx`.
  */
 export function rutaInicioPorRol(rol) {
-  return rol === 'cliente' ? '/cliente' : '/admin'
+  if (rol === 'superadmin') return '/superadmin'
+  if (rol === 'cliente') return '/cliente'
+  return '/admin'
 }

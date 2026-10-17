@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
+import { useBarberia } from '../context/useBarberia'
 
 export default function ProductosPage() {
+  // El catálogo es de UNA barbería: todo se filtra por su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
+
   const [productos, setProductos] = useState([])
   const [loading, setLoading] = useState(true)
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos')
@@ -9,13 +14,14 @@ export default function ProductosPage() {
   const [orden, setOrden] = useState('nombre')
 
   useEffect(() => {
-    obtenerProductos()
-  }, [])
+    if (barberiaId) obtenerProductos()
+  }, [barberiaId])
 
   async function obtenerProductos() {
     const { data, error } = await supabase
       .from('productos')
       .select('*')
+      .eq('barberia_id', barberiaId)
 
     if (error) {
       console.error('Error:', error)

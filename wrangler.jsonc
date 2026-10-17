@@ -1,8 +1,12 @@
 {
-    "name": "reservas-barberia",
-    "compatibility_date": "2026-10-01",
-    "assets": {
-      "directory": "./dist",
-      "not_found_handling": "single-page-application"
-    }
-  }
+  "name": "reservas-barberia",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    { "pattern": "gools.com.mx/*", "zone_name": "gools.com.mx" },
+    { "pattern": "*.gools.com.mx/*", "zone_name": "gools.com.mx" }
+  ]
+}
