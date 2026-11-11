@@ -96,6 +96,7 @@ export class ClienteSupabaseMock {
     this.respuestasRpc = new Map()
     this.respuestasAuth = new Map()
     this.respuestasStorage = new Map()
+    this.respuestasFunciones = new Map()
     this.llamadas = []
     this.callbackAuthStateChange = null
 
@@ -125,6 +126,27 @@ export class ClienteSupabaseMock {
       }),
     }
 
+    /* Edge Functions. `invoke` devuelve `{ data, error }` como el cliente real.
+       El `error` que devuelve supabase-js v2 trae `context` con la `Response`
+       original: por eso `mensajeDeLaFuncion` de `BarberiaForm` puede leer el
+       cuerpo y sacar el motivo en español. Un test puede construir ese
+       `context` a mano: `{ json: async () => ({ error: '...' }) }`. */
+    this.functions = {
+      invoke: async (nombre, opciones = {}) => {
+        this.llamadas.push({
+          tipo: 'functions.invoke',
+          nombre,
+          argumentos: opciones.body,
+        })
+        const configurada = this.respuestasFunciones.get(nombre)
+        return this._evaluar(
+          configurada,
+          { nombre, argumentos: opciones.body },
+          RESPUESTA_NULA
+        )
+      },
+    }
+
     return this
   }
 
@@ -136,6 +158,7 @@ export class ClienteSupabaseMock {
   onRpc(nombre, respuesta) { this.respuestasRpc.set(nombre, respuesta); return this }
   onAuth(operacion, respuesta) { this.respuestasAuth.set(operacion, respuesta); return this }
   onStorage(operacion, respuesta) { this.respuestasStorage.set(operacion, respuesta); return this }
+  onFunction(nombre, respuesta) { this.respuestasFunciones.set(nombre, respuesta); return this }
 
   // --- API que consume la aplicacion ---
   from(tabla) { return new Consulta(this, tabla, 'select') }
@@ -153,11 +176,13 @@ export class ClienteSupabaseMock {
       operacion: consulta.operacion,
       filtros: consulta.filtros,
       carga: consulta.carga,
-      // Se registra lo que se PIDIÓ a la base (columnas y orden), para poder
-      // comprobar que la consulta acota por barberia_id y pide el orden
-      // correcto. El mock no reordena los datos: los devuelve tal cual.
+      // Se registra lo que se PIDIÓ a la base (columnas, orden y opciones), para
+      // poder comprobar que la consulta acota por barberia_id, pide el orden
+      // correcto y resuelve el conflicto en la columna esperada. El mock no
+      // reordena los datos: los devuelve tal cual.
       columnas: consulta.columnas,
       orden: consulta.orden,
+      opciones: consulta.opciones,
     })
     const configurada = this.respuestas.get(`${consulta.tabla}.${consulta.operacion}`)
     const valor = this._evaluar(configurada, consulta, RESPUESTA_VACIA)
