@@ -61,8 +61,9 @@ Características del stack que importan:
   `useEffect` y props.
 - **No hay tests.** No hay script de test, ni runners, ni archivos de test.
   No hay error boundaries.
-- **No hay variables de entorno más allá de las 3 del proyecto** (`VITE_SUPABASE_URL`,
-  `VITE_SUPABASE_PUBLISHABLE_KEY` y `VITE_BARBERIA_SLUG`; ver §14.1).
+- **No hay variables de entorno más allá de las 4 del proyecto** (`VITE_SUPABASE_URL`,
+  `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_BARBERIA_SLUG` y `VITE_DOMINIO_BASE`;
+  ver §14.1).
 - Existe un `dist/` (build previo) y está en `.gitignore`.
 
 ---
@@ -420,7 +421,7 @@ No hay redirección de la raíz a otra parte.
 | Rol | Dónde entra | Qué puede hacer |
 |---|---|---|
 | `superadmin` | `/superadmin` | Dueño del software: ve **todas** las barberías, crea nuevas (con la cuenta de su dueño) y las activa/desactiva. **Solo hay 1** (`23302011@utfv.edu.mx`). También entra al `/admin` de cualquier barbería (§5, §9.9) |
-| `admin` | `/admin` | Dueño de una barbería: todo lo del panel de ESA barbería. Lo crea el superadmin desde `/superadmin` (§10.10); hoy **1 cuenta**, la de Kromatik (§18.49) |
+| `admin` | `/admin` | Dueño de una barbería: todo lo del panel de ESA barbería. Lo crea el superadmin desde `/superadmin` (§10.10); hoy **2 cuentas** (Kromatik y `barber-shop`, §18.49) |
 | `cliente` | `/cliente` | Se registra en `/login`, y ve, cancela y reagenda **sus** citas. Su pertenencia a cada barbería vive en **`membresias`** y se crea sola al entrar (§10.9) |
 
 El rol vive en la tabla **`perfiles`** (§10.2), **nunca** en `auth.users.user_metadata`:
@@ -1445,19 +1446,21 @@ a un gist.** Si necesitas el valor, pregunta.
 
 **Sí hay carpeta `supabase/`** desde 2026-10-13 (la Edge Function de recordatorios,
 §4) y el esquema **sí quedó versionado en migraciones** desde 2026-10-16 (las del
-multi-barbería, §10.8). Hoy hay **dos** Edge Functions en `supabase/functions/`
-(`enviar-recordatorios` y `crear-barberia`, §10.7 y §10.10) y **11 migraciones** por MCP
-(resumen completo en §10.11). Esquema verificado por MCP (2026-10-16), columna por
+multi-barbería, §10.8). En la plataforma hay **tres** Edge Functions activas
+(`enviar-recordatorios`, `crear-barberia` y **`enviar-whatsapp`**, §10.7 y §10.10) y
+**11 migraciones** por MCP (resumen completo en §10.11). ⚠ **De las tres, solo dos están
+en el repo**: `enviar-whatsapp` existe desplegada pero **no tiene carpeta local**, así que
+su código no está versionado (misma deuda que §18.45). Esquema verificado por MCP (2026-10-17), columna por
 columna:
 
 | Tabla | Columnas reales | Notas |
 |---|---|---|
-| **`barberias`** | `id uuid PK`, `nombre text NOT NULL`, `slug text NOT NULL`, `activa boolean NOT NULL DEFAULT true`, `created_at timestamptz NOT NULL DEFAULT now()` | **Entidad raíz del multi-barbería.** `slug` con `barberias_slug_valido` (3–40 caracteres, regex `^[a-z0-9]+(-[a-z0-9]+)*$` y no reservado, §10.10) + `barberias_slug_unico`. **Una sola política de lectura: `activa`** → una barbería dada de baja desaparece del sitio sin borrar nada. Fila raíz: `Kromatik` / `kromatik` (`565afd8a-`…). Las políticas que leen/escriben **todas** las filas son `Superadmin lee todas` / `Superadmin escribe` (§10.5). Hoy hay **2** filas: `kromatik` (la raíz, del backfill) y `barber-shop` (creada por el usuario; **no borrarla**) |
-| `citas` | `id uuid PK`, `nombre text NOT NULL`, `telefono text NOT NULL`, `servicio text NOT NULL`, `fecha date NOT NULL`, `hora time NOT NULL`, `estado text NULL DEFAULT 'pendiente'`, `created_at timestamp NULL DEFAULT now()`, `correo text`, `notas text`, `addon boolean NULL DEFAULT false`, `total numeric`, `barbero_id uuid`, `productos jsonb NOT NULL DEFAULT '[]'`, `cliente_id uuid`, `recordatorio_enviado_at timestamptz NULL`, **`recordatorio_24h_enviado_at timestamptz NULL`**, **`recordatorio_2h_enviado_at timestamptz NULL`**, **`barberia_id uuid NOT NULL → barberias(id)`** | las **dos FK** son `citas_barbero_id_fkey` → `barberos(id)` con **`ON DELETE SET NULL`** y `citas_barberia_id_fkey` → `barberias(id)` (sin cascade, **no se puede borrar una barbería con citas**). `cliente_id` **no tiene FK ni trigger**: apunta a `auth.users` por convención. Las **3 columnas `recordatorio_*`** son marcas, **no** estados: la del WhatsApp la escribe el panel (§9.5), las otras dos la Edge Function (§10.7) |
+| **`barberias`** | `id uuid PK`, `nombre text NOT NULL`, `slug text NOT NULL`, `activa boolean NOT NULL DEFAULT true`, `created_at timestamptz NOT NULL DEFAULT now()`, **`zona_horaria text`** | **Entidad raíz del multi-barbería.** `slug` con `barberias_slug_valido` (3–40 caracteres, regex `^[a-z0-9]+(-[a-z0-9]+)*$` y no reservado, §10.10) + `barberias_slug_unico`. **Una sola política de lectura: `activa`** → una barbería dada de baja desaparece del sitio sin borrar nada. Fila raíz: `Kromatik` / `kromatik` (`565afd8a-`…). Las políticas que leen/escriben **todas** las filas son `Superadmin lee todas` / `Superadmin escribe` (§10.5). Hoy hay **2** filas: `kromatik` (la raíz, del backfill) y `barber-shop` (creada por el usuario; **no borrarla**). ⚠ **`zona_horaria` es una columna nueva** (2026-10-17, sin migración registrada): las dos barberías están en `America/Mexico_City`. La usa la RPC de WhatsApp para comparar las ventanas H-24 y H-2 en hora local (§10.7); **si un día fuera `NULL`**, esa comparación da `NULL` y **la barbería no recibiría avisos automáticos**. |
+| `citas` | `id uuid PK`, `nombre text NOT NULL`, `telefono text NOT NULL`, `servicio text NOT NULL`, `fecha date NOT NULL`, `hora time NOT NULL`, `estado text NULL DEFAULT 'pendiente'`, `created_at timestamp NULL DEFAULT now()`, `correo text`, `notas text`, `addon boolean NULL DEFAULT false`, `total numeric`, `barbero_id uuid`, `productos jsonb NOT NULL DEFAULT '[]'`, `cliente_id uuid`, `recordatorio_enviado_at timestamptz NULL`, **`recordatorio_24h_enviado_at timestamptz NULL`**, **`recordatorio_2h_enviado_at timestamptz NULL`**, **`recordatorio_wa_24h_enviado_at timestamptz NULL`**, **`recordatorio_wa_2h_enviado_at timestamptz NULL`**, **`barberia_id uuid NOT NULL → barberias(id)`** | las **dos FK** son `citas_barbero_id_fkey` → `barberos(id)` con **`ON DELETE SET NULL`** y `citas_barberia_id_fkey` → `barberias(id)` (sin cascade, **no se puede borrar una barbería con citas**). `cliente_id` **no tiene FK ni trigger**: apunta a `auth.users` por convención. Las **5 columnas `recordatorio_*`** son marcas, **no** estados, y **cada canal filtra solo las suyas** (§9.5): `recordatorio_enviado_at` la escribe el panel al abrir WhatsApp a mano; las otras cuatro las escriben las Edge Functions (`enviar-recordatorios` y `enviar-whatsapp`, §10.7). Las dos `wa_*` son **columnas nuevas** del 2026-10-17 y **no están en ninguna migración** (§18.45) |
 | `servicios` | `id`, `nombre`, `categoria`, `descripcion`, `costo numeric`, `duracion text`, `imagen`, `created_at`, **`barberia_id uuid NOT NULL → barberias(id)`** | `duracion` es TEXT sin CHECK |
 | `productos` | `id`, `nombre`, `descripcion`, `categoria NOT NULL`, `precio numeric NOT NULL`, `imagen`, `created_at`, **`stock integer`**, **`barberia_id uuid NOT NULL → barberias(id)`** | `stock` solo lo lee `ProductosPage`; ni el admin ni `BookingPage` lo tocan |
 | `barberos` | `id`, `nombre`, `especialidad`, `disponible boolean NULL DEFAULT true`, `imagen`, `created_at`, **`rating numeric DEFAULT 0`**, **`total_resenas integer DEFAULT 0`**, `sillon_numero integer`, `sillon_nombre text`, **`barberia_id uuid NOT NULL → barberias(id)`** | `rating`/`total_resenas` los usa `BarberosAdmin`; `sillon_*` no los usa nadie (§18.25) |
-| `configuracion` | `id integer PK` (**con secuencia**, ya no forzado a `1`), `nombre text NOT NULL`, `estado text`, `municipio text`, `logo text`, `descripcion text`, `updated_at timestamptz`, **`recordatorios_activos boolean NOT NULL DEFAULT false`**, **`barberia_id uuid NOT NULL → barberias(id)`** con **`unique (barberia_id)`** | **una fila por barbería** (se eliminó el `check (id = 1)` y el `id` tiene secuencia). La usan los dos rails, `ConfiguracionAdmin` y el provider, todos filtrando por `barberia_id`. **`recordatorios_activos` es el interruptor del envío automático de ESA barbería** (§10.7) |
+| `configuracion` | `id integer PK` (**con secuencia**, ya no forzado a `1`), `nombre text NOT NULL`, `estado text`, `municipio text`, `logo text`, `descripcion text`, `updated_at timestamptz`, **`recordatorios_activos boolean NOT NULL DEFAULT false`**, **`whatsapp_activo boolean NOT NULL DEFAULT false`**, **`barberia_id uuid NOT NULL → barberias(id)`** con **`unique (barberia_id)`** | **una fila por barbería** (se eliminó el `check (id = 1)` y el `id` tiene secuencia). La usan los dos rails, `ConfiguracionAdmin` y el provider, todos filtrando por `barberia_id`. **`recordatorios_activos` y `whatsapp_activo` son los interruptores del envío automático de ESA barbería** (§9.5, §10.7): los dos los respeta su RPC y los controla el panel. ⚠ `whatsapp_activo` es **columna nueva** del 2026-10-17 y **no está en ninguna migración** (§18.45) |
 | **`perfiles`** | `id uuid PK → auth.users(id) ON DELETE CASCADE`, `rol text NOT NULL DEFAULT 'cliente'` con **`check (rol in ('superadmin','admin','cliente'))`**, `nombre text`, `created_at timestamptz NOT NULL DEFAULT now()`, **`barberia_id uuid NULL → barberias(id)`** | **Fuente de verdad del rol y de la barbería del admin.** La app solo hace SELECT; el INSERT lo hace el trigger `trg_crear_perfil` de `auth.users` (§10.6) y **nunca escribe `barberia_id`**: se asigna por SQL (§10.4) |
 | **`membresias`** | `user_id uuid NOT NULL → auth.users(id)` con **`ON DELETE CASCADE`**, `barberia_id uuid NOT NULL → barberias(id)` (sin cascade: no cascadea con `citas`, que ya lo impide), `created_at timestamptz NOT NULL DEFAULT now()`, **PK `(user_id, barberia_id)`** | **Una cuenta, varias barberías** (§10.9). Es la pertenencia del **cliente** a una barbería; `perfiles.rol` sigue siendo global. Índice en `barberia_id`. La app **solo hace SELECT**: el alta la hace la RPC `unirme_a_barberia`, y no hay política de INSERT/UPDATE/DELETE |
 
@@ -2872,7 +2875,7 @@ efectos de carga ganaron `barberiaId`:
 | 4 | `src/pages/ServicesPage.jsx` | 16 | `react-hooks/immutability` |
 | 5 | `src/pages/ProductosPage.jsx` | 17 | `react-hooks/immutability` |
 | 6 | `src/pages/admin/BarberosAdmin.jsx` | 94 | `react-hooks/immutability` |
-| 7 | `src/pages/admin/CitasAdmin.jsx` | 380 | `react-hooks/immutability` |
+| 7 | `src/pages/admin/CitasAdmin.jsx` | 417 | `react-hooks/immutability` |
 | 8 | `src/pages/admin/ProductosAdmin.jsx` | 69 | `react-hooks/immutability` |
 | 9 | `src/pages/admin/ResumenPage.jsx` | 82 | `react-hooks/immutability` |
 | 10 | `src/pages/admin/ServiciosAdmin.jsx` | 116 | `react-hooks/immutability` |
@@ -2905,6 +2908,17 @@ patrón de carga de `CitasCliente` (`useCallback` + `useEffect` + el
 `react-hooks/immutability`. ⚠ **La Edge Function `.ts` no la lintea `pnpm lint`**: el
 `eslint.config.js` solo mira `**/*.{js,jsx}`, así que `supabase/functions/crear-barberia`
 no hay que añadirlo a `globalIgnores` (verificado: el total no se movió al crearlo).
+⚠ Ojo con esto: **si una Edge Function se guarda como `.js` en vez de `.ts`, entra al lint**
+y `process` sale como `no-undef`. Pasó con un `index.js` de prueba el 2026-10-17 (11 errores
+en vez de 10); se resolvió al volver al `.ts`. Mantén las funciones en `.ts`.
+
+✅ **Medición del 2026-10-17 (routing del superadmin y barra de recordatorios): sigue en
+`10 errors, 9 warnings`, 0 nuevos.** `BarberiaProvider.jsx` da 0 problemas (todo lo suyo
+son funciones puras a nivel de módulo, sin hooks), y `CitasAdmin.jsx` conserva su error y su
+aviso preexistentes — **pero la línea del error se movió de 380 a 417** al meter
+`InterruptorCanal` (un componente de módulo) por encima del efecto de carga. Si añades
+código **por encima** de la línea ~380 de `CitasAdmin.jsx`, actualiza el número de la tabla
+de arriba.
 
 📈 **La línea base subió de 8 a 10** con el pull `853ca9f..8809213`, que puso a
 `Servicios.jsx` y `Productos.jsx` (los públicos) a leer de Supabase con el patrón
@@ -3014,8 +3028,12 @@ Probado en Chrome DevTools. La app necesita `.env` con las dos variables válida
   un mensaje de error (esperado, ver §13.A); en cambio los catálogos públicos y
   `/cliente` **sí** avisan del fallo (§13.A).
 - **Multi-barbería** — con `VITE_BARBERIA_SLUG=kromatik` (o el subdominio
-  `kromatik.tusoftware.com`) la app entra normal. Las **pruebas de aislamiento** hechas el
-  2026-10-16 con una barbería temporal (`prueba-temp`, borrada al terminar) fueron:
+  `kromatik.gools.com.mx`) la app entra normal. **En el dominio base y sus subdominios
+  reservados** (`gools.com.mx`, `www.gools.com.mx`, `admin.gools.com.mx`) sale **"Elige tu
+  barbería"** y **no** se cae a `VITE_BARBERIA_SLUG` (§3): los 17 casos del resolver están
+  comprobados, pero el render de esa pantalla no se ha visto en navegador. Las **pruebas de
+  aislamiento** hechas el 2026-10-16 con una barbería temporal (`prueba-temp`, borrada al
+  terminar) fueron:
   - **slug inexistente** (`VITE_BARBERIA_SLUG=no-existe`) → la pantalla "Esta barbería no
     está disponible"; si además falta la variable, el texto avisa de `sinSlug` (§3);
   - **barbería inactiva** → no se ve desde `anon` (`Lectura publica` = `activa`) y su
@@ -3029,8 +3047,11 @@ Probado en Chrome DevTools. La app necesita `.env` con las dos variables válida
     la misma da `23505`, aunque la cita no tenga barbero (§10.5);
   - **recordatorios** → la Edge Function respondió `{"enviados":0,"motivo":"interruptor
     apagado"}` con el secreto correcto y `401` con uno falso (§10.7).
-  ⚠ Al terminar se borraron esas filas: la base quedó en **1 barbería, 25 citas, 3
-  servicios, 12 productos, 1 barbero y 1 fila de `configuracion`**.
+  ⚠ Al terminar se borraron esas filas. **Estado real medido por MCP el 2026-10-17**:
+  2 barberías (`kromatik`, `barber-shop`), 24 citas, 4 servicios, 13 productos, 2 barberos,
+  2 filas de `configuracion`, 8 perfiles (**1 `superadmin` + 2 `admin` + 5 `cliente`**) y
+  5 membresías. ⚠ Las cifras de filas cambian seguido (son datos de prueba que el usuario
+  edita a diario): remídete a una consulta, no a este párrafo, para contarlas.
 - **Superadmin (`/superadmin`)** — entrando con la cuenta `superadmin` se llega al panel;
   con una cuenta `admin` o `cliente`, `/superadmin` **rebota** a `/admin` o `/cliente`
   (`rutaInicioPorRol`, §5). En el panel la tabla lista **todas** las barberías con sus
@@ -3055,24 +3076,31 @@ Probado en Chrome DevTools. La app necesita `.env` con las dos variables válida
 
 ### 15.3 Estado de git (importante)
 
-El repo ya está **publicado y con historial**: 30 commits, con merges de PR (#12, #13,
-#14). Todo el trabajo anterior que estaba "solo en el working tree" (panel de admin,
-auth, contexto de configuración, wizard) **ya está commiteado**.
+El repo está **publicado y con historial**: **35 commits**, en la rama
+`feature/dashboard-admin` (al día con `origin`), con merges de PR (#12, #13, #14).
 
-Estado del working tree en 2026-10-12: un único archivo modificado,
-`src/context/ConfiguracionProvider.jsx`, y el cambio es **solo comentarios**: se
-borraron las 4 líneas de cabecera del archivo (`// src/context/…` y el párrafo que
-explicaba el provider). Ningún cambio funcional. Sin archivos sin trackear.
+✅ **Verificado el 2026-10-17: todo el trabajo de multi-barbería, membresías, superadmin,
+recordatorios y dominio `gools.com.mx` está YA COMMITEADO** (HEAD `7d5d9b8`
+"feat: Dashboard SuperAdmin"). Los archivos que eran nuevos —`BarberiaProvider.jsx`,
+`barberia.js`, `useBarberia.js` y los tres de `src/pages/superadmin/`— ya están
+trackeados. **Lo único sin commitear es este mismo `AGENTS.md`.** ⚠ No copies el patrón de
+"está sin commitear" desde aquí: **comprueba `git status` antes de asumir nada**, porque
+este párrafo envejece y el commit lo hace el usuario cuando quiere, no el agente.
 
 ⚠ Aun así, **antes de cualquier comando destructivo** (`checkout`, `restore`, `reset`,
-`stash`) pregúntalo: `git reset --hard` o un `restore` masivo tirarían la rama de
-trabajo del cliente y el rediseño del admin si no están commiteados. Comprueba
-`git status` primero.
+`stash`) pregúntalo: un `git reset --hard` o un `restore` masivo tirarían la rama de
+trabajo del cliente sin aviso. Comprueba `git status` primero.
 
-⚠ **Estado del working tree en 2026-10-17 (multi-barbería + membresías + superadmin):
-todo este trabajo está SIN COMMITEAR** (~25 archivos modificados y ~10 nuevos, más
-`supabase/functions/crear-barberia/`). Las migraciones **sí** están aplicadas en la BD
-(§10.11). El commit lo decide el usuario: no lo hagas por tu cuenta ni ejecutes
+⚠ **`.env` (gitignored, línea 15 del `.gitignore`) es el único archivo que no se versiona y
+sí importa**: el 2026-10-17 se le añadió `VITE_DOMINIO_BASE=gools.com.mx`. Al hacerlo, el
+archivo **no tenía salto de línea final** y la variable se concatenó al valor de
+`RESEND_API_KEY`, corrompiéndolo; se reparó y **parte de esa clave quedó expuesta en el
+registro de la conversación**. Reglas para volver a tocarlo: **comprueba primero si
+termina en salto de línea** y **no imprimas el archivo** (§16). La clave de Resend
+debería rotarse.
+
+⚠ Las migraciones **sí** están aplicadas en la BD (§10.11) y las del canal de WhatsApp
+**no** (§18.45). El commit lo decide el usuario: no lo hagas por tu cuenta ni ejecutes
 `git add`/`commit` sin pedirlo.
 
 ---
@@ -3086,7 +3114,7 @@ todo este trabajo está SIN COMMITEAR** (~25 archivos modificados y ~10 nuevos, 
 | `src/context/AuthContext.jsx` | Sesión y `onAuthStateChange`. El cleanup incorrecto deja listeners duplicados. |
 | `src/components/ProtejerRuta.jsx` | Guard de rutas de **`/admin` y `/cliente`**. Romperlo deja ambos paneles abiertos o inaccesibles. |
 | `src/main.jsx` | Orden de los providers (`BrowserRouter` > `AuthProvider`). |
-| `src/context/BarberiaProvider.jsx` | Resuelve la barbería por **slug** (subdominio o `VITE_BARBERIA_SLUG`); si no la encuentra, **ninguna ruta se monta** (§3). Un error en `DOMINIO_BASE` o en el parseo del subdominio deja la app entera en "Esta barbería no está disponible". |
+| `src/context/BarberiaProvider.jsx` | Resuelve la barbería por **slug** desde el subdominio contra `VITE_DOMINIO_BASE`, o con `VITE_BARBERIA_SLUG` si el host no es el dominio real; si no la encuentra, **ninguna ruta se monta** (§3). Una clave mal escrita en `VITE_DOMINIO_BASE`, un parseo mal del subdominio o un slug reservado sin reconocer dejan la app entera en "Esta barbería no está disponible" o en "Elige tu barbería". |
 | `src/App.jsx` | Tabla de rutas **y** los 3 layouts. Único lugar donde se registran las páginas. La ruta `/cliente` está al final del `<Routes>`, fuera del layout público. |
 | `package.json` / `pnpm-lock.yaml` | No los edites para "subir una dependencia menor". |
 | `public/barber.jpg` | 2.2 MB, referenciado por ruta absoluta `/barber.jpg` en `Hero.jsx`. Si lo mueves o renuevas, actualiza el `src`. |
