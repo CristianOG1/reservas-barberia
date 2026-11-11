@@ -11,16 +11,19 @@ import CitaManualForm from './CitaManualForm'
 import { useConfirmarCita } from '../../hooks/useConfirmarCita'
 import { useConfiguracion } from '../../context/useConfiguracion'
 import { useBarberia } from '../../context/useBarberia'
+import {
+  duracionTotalCita,
+  estadoDe,
+  mensajeRecordatorio,
+  partirServicios,
+  productosCita,
+} from '../../utils/citas'
+import { DIAS_CORTO, FechaISO, etiquetaFecha, formatearHora, formatRecordatorio, minutosDeHora } from '../../utils/fecha'
+import { telefonoParaWhatsApp } from '../../utils/telefono'
 
 /* ============================================================
    1. UTILIDADES DE FECHA, HORA Y CATÁLOGO
    ============================================================ */
-
-// Código de país para WhatsApp. wa.me exige el número internacional sin signos:
-// 10 dígitos (los dos dígitos de un móvil mexicano) + 52.
-const CODIGO_PAIS = '52'
-
-const DIAS_CORTO = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb']
 
 const ETIQUETA_ESTADO = {
   pendiente: 'Pendiente',
@@ -39,55 +42,13 @@ const BADGE_ESTADO = {
 }
 
 const ITEMS_POR_PAGINA = 8
-const DURACION_POR_DEFECTO = 30 // minutos, cuando el servicio no está en el catálogo
 const FILTRO_SIN_ASIGNAR = 'sin-asignar'
 
 // 'estado' es nullable en la base: las citas nuevas nacen sin estado.
-function estadoDe(cita) {
-  return cita.estado || 'pendiente'
-}
-
 // Fecha local en formato YYYY-MM-DD. Se parsesa explícitamente en hora local:
 // `new Date('2026-09-30')` se interpretaría en UTC y en México mostraría el 29.
-function FechaISO(d) {
-  const n = d instanceof Date ? d : new Date(`${String(d).slice(0, 10)}T00:00:00`)
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
-}
-
-function etiquetaFecha(iso) {
-  const n = new Date(`${iso}T00:00:00`)
-  const dia = DIAS_CORTO[n.getDay()]
-  const texto = n.toLocaleDateString('es-MX', { day: 'numeric', month: 'long' })
-  return `${dia.charAt(0).toUpperCase()}${dia.slice(1)} ${texto}`
-}
-
 // `citas.hora` es una columna `time`: llega como 'HH:MM:SS'. El flujo público
 // guarda textos tipo '10:00 AM', así que se aceptan ambos formatos.
-function formatearHora(valor) {
-  if (!valor) return '—'
-  const s = String(valor).trim()
-  const m = /^(\d{1,2}):(\d{2})/.exec(s)
-  if (!m) return s
-  if (/\b(am|pm)\b/i.test(s)) return s.toUpperCase()
-  const h = Number(m[1])
-  const h12 = h % 12 === 0 ? 12 : h % 12
-  return `${h12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`
-}
-
-function minutosDeHora(valor) {
-  if (valor instanceof Date) return valor.getHours() * 60 + valor.getMinutes()
-  const m = /^(\d{1,2}):(\d{2})/.exec(String(valor || '').trim())
-  return m ? Number(m[1]) * 60 + Number(m[2]) : null
-}
-
-function normalizar(texto) {
-  return String(texto || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-}
-
 /* ---- Recordatorio por WhatsApp ---- */
 
 /**
@@ -96,102 +57,20 @@ function normalizar(texto) {
  * @returns {{ numero: string, motivo: string }} `numero` vacío si no hay número
  *   usable, y `motivo` explicando por qué, para poder ponerlo en el `title`.
  */
-function telefonoParaWhatsApp(telefono) {
-  const crudo = String(telefono ?? '').trim()
-  if (!crudo) return { numero: '', motivo: 'La cita no tiene teléfono registrado' }
-
-  let digitos = crudo.replace(/\D/g, '')
-  // Prefijos que la gente escribe a mano: prefijo internacional '00', la larga
-  // nacional '044', el código de país y el '1' de móvil internacional. Se quitan
-  // en ese orden ANTES de validar la longitud: si no, un "+52 1 55 1234 5678"
-  // quedaría con el 1 pegado y el número sería inválido.
-  if (digitos.startsWith('00')) digitos = digitos.slice(2)
-  if (digitos.startsWith('044')) digitos = digitos.slice(3)
-  if (digitos.startsWith(CODIGO_PAIS)) digitos = digitos.slice(CODIGO_PAIS.length)
-  if (digitos.length === 11 && digitos.startsWith('1')) digitos = digitos.slice(1)
-
-  // 10 dígitos = móvil local: se le antepone el código de país.
-  if (digitos.length === 10) digitos = `${CODIGO_PAIS}${digitos}`
-  else if (digitos.length !== 11) {
-    return { numero: '', motivo: `Teléfono "${crudo}" no válido: ${digitos.length} dígitos, se esperan 10` }
-  }
-
-  return { numero: digitos, motivo: '' }
-}
-
 /**
  * Marca de tiempo de un recordatorio automático, para el `title` de la etiqueta.
  * Las columnas `recordatorio_24h_enviado_at` y `recordatorio_2h_enviado_at` las
  * escribe la Edge Function con `now()`, así que llegan como timestamptz ISO.
  */
-function formatRecordatorio(iso) {
-  if (!iso) return ''
-  const n = new Date(iso)
-  if (Number.isNaN(n.getTime())) return ''
-  return n.toLocaleString('es-MX', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function mensajeRecordatorio(cita, nombreNegocio) {
-  return (
-    `Hola ${cita.nombre}, te recordamos tu cita en ${nombreNegocio} ` +
-    `el ${etiquetaFecha(cita.fecha)} a las ${formatearHora(cita.hora)} ` +
-    `para ${cita.servicio}. ¡Te esperamos!`
-  )
-}
-
 // Una cita puede traer varios servicios: `citas.servicio` los guarda unidos con
 // ', ' (el flujo público permite selección múltiple desde 2026-10).
-function partirServicios(texto) {
-  return String(texto ?? '')
-    .split(',')
-    .map((p) => p.trim())
-    .filter(Boolean)
-}
-
 // `citas.servicio` es texto libre y casi nunca coincide con `servicios.nombre`
 // (el catálogo dice 'Corte de Cabello', las citas dicen 'Corte'). Se resuelve
 // por nombre exacto, luego por categoría exacta y luego por categoría contenida.
-function buscarServicio(nombreCita, servicios) {
-  const n = normalizar(nombreCita)
-  if (!n) return null
-  return (
-    servicios.find((s) => normalizar(s.nombre) === n) ||
-    servicios.find((s) => normalizar(s.categoria) === n) ||
-    servicios.find((s) => normalizar(s.categoria) && n.includes(normalizar(s.categoria))) ||
-    null
-  )
-}
-
 // Duración acumulada de TODOS los servicios de la cita. Los que no están en el
 // catálogo caen al valor por defecto, como ya pasaba con el servicio único.
-function duracionTotalCita(cita, servicios) {
-  const nombres = partirServicios(cita.servicio)
-  if (nombres.length === 0) return DURACION_POR_DEFECTO
-  return nombres.reduce(
-    (a, n) => a + (Number(buscarServicio(n, servicios)?.duracion) || DURACION_POR_DEFECTO),
-    0
-  )
-}
-
 // Productos de la cita: la columna es jsonb con [{ nombre, precio }]. Puede
 // llegar como texto si alguien la insertó a mano.
-function productosCita(cita) {
-  const bruto = cita.productos
-  if (!bruto) return []
-  if (Array.isArray(bruto)) return bruto
-  try {
-    const parsed = typeof bruto === 'string' ? JSON.parse(bruto) : bruto
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
 /* ============================================================
    2. ICONOS
    ============================================================ */

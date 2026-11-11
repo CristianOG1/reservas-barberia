@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { useBarberia } from '../../context/useBarberia'
+import { aMinutos } from '../../utils/formato'
 import ServicioForm from './ServicioForm'
 
 /* ===== Configuración ===== */
@@ -18,11 +19,6 @@ const COLORES_CATEGORIA = ['bg-primary', 'bg-amber', 'bg-green-600', 'bg-red-600
 
 // `duracion` es una columna TEXT: hoy guarda '30', pero el formulario aceptaba
 // '50 min'. Para promediar se extrae el primer número que aparezca.
-function aMinutos(valor) {
-  const n = parseInt(String(valor ?? '').match(/\d+/)?.[0] ?? '', 10)
-  return Number.isFinite(n) ? n : null
-}
-
 /* ===== Íconos ===== */
 
 function IconoExportar() {

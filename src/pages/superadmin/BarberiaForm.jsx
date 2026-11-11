@@ -11,45 +11,16 @@
 //   porque es parte de la dirección del sitio.
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
+import { SLUG_MAX, SLUG_MIN, motivoSlugInvalido, slugDeNombre } from '../../utils/slug'
 
-const REGEX_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
-const SLUG_MIN = 3
-const SLUG_MAX = 40
 const PASSWORD_MIN = 8
 const REGEX_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-// Palabras que no pueden ser slug: chocan con direcciones del software.
-const RESERVADOS = ['www', 'app', 'admin', 'api', 'superadmin', 'mail', 'soporte']
 
 // Sugiere un slug a partir del nombre: minúsculas, sin acentos, con guiones
 // simples. Se recalcula mientras el nombre cambia hasta que el usuario escribe
 // el slug a mano.
-function slugDeNombre(nombre) {
-  return String(nombre)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, SLUG_MAX)
-    .replace(/-+$/, '')
-}
-
 // Devuelve el motivo por el que un slug no sirve, o null si es válido. Son las
 // mismas reglas que aplica el `check barberias_slug_valido` y la Edge Function.
-function motivoSlugInvalido(slug) {
-  if (slug.length < SLUG_MIN || slug.length > SLUG_MAX) {
-    return `El slug debe tener entre ${SLUG_MIN} y ${SLUG_MAX} caracteres.`
-  }
-  if (!REGEX_SLUG.test(slug)) {
-    return 'El slug solo admite minúsculas, números y guiones simples (sin empezar ni terminar con guion).'
-  }
-  if (RESERVADOS.includes(slug)) {
-    return `"${slug}" es una palabra reservada. Elige otro slug.`
-  }
-  return null
-}
-
 // supabase-js deja el `Response` original en `error.context` cuando la Edge
 // Function responde con un código de error; el motivo en español viene en el
 // cuerpo. Sin esto solo se vería "Edge Function returned a non-2xx status code".

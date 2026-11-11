@@ -3,6 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useBarberia } from '../context/useBarberia'
 import { supabase } from '../supabaseClient'
+import { borrarBorrador, guardarBorrador, leerBorrador } from '../utils/borrador'
+import { FechaISO, formato12h, lunesDe, minutosDeHora } from '../utils/fecha'
+import { duracionAMinutos, formatoDuracion } from '../utils/formato'
 
 const PASOS = ['Servicio', 'Fecha & Hora', 'Tus Datos']
 
@@ -18,83 +21,14 @@ const ETIQUETAS_DIA = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM']
 
 // Fecha local en YYYY-MM-DD. NO usar toISOString(): convierte a UTC y en México
 // (UTC-6) devuelve el día anterior.
-function FechaISO(d) {
-  const n = d instanceof Date ? d : new Date(`${String(d).slice(0, 10)}T00:00:00`)
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
-}
-
 // lunes de la semana a la que pertenece la fecha (la semana empieza en lunes)
-function lunesDe(fecha) {
-  const n = new Date(fecha)
-  n.setHours(0, 0, 0, 0)
-  const dow = n.getDay() // 0 = domingo
-  n.setDate(n.getDate() + (dow === 0 ? -6 : 1 - dow))
-  return n
-}
-
-function aMinutos(hora) {
-  const [h, m] = hora.split(':').map(Number)
-  return h * 60 + m
-}
-
 // Solo presentación: '14:30' → '2:30 PM'
-function formato12h(hora) {
-  const [h, m] = hora.split(':').map(Number)
-  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
-}
-
 // `duracion` es TEXT: puede venir '30' o '50 min'.
-function formatoDuracion(valor) {
-  const s = String(valor ?? '').trim()
-  return /^\d+$/.test(s) ? `${s} min` : s || '—'
-}
-
 // Igual que `ServiciosAdmin.aMinutos()`: extrae el primer número del texto.
-function duracionAMinutos(valor) {
-  const n = parseInt(String(valor ?? '').match(/\d+/)?.[0] ?? '', 10)
-  return Number.isFinite(n) ? n : 0
-}
-
 /* ---- Borrador de la reservación ----
    Si el cliente llega al final sin sesión, se guarda lo que eligió en
    sessionStorage, se le manda a /login y al volver se restaura todo. Se borra
    al confirmar la cita o a las 2 horas. */
-const CLAVE_BORRADOR = 'borradorReserva'
-const VIGENCIA_BORRADOR_MS = 2 * 60 * 60 * 1000
-
-function guardarBorrador(datos) {
-  try {
-    sessionStorage.setItem(CLAVE_BORRADOR, JSON.stringify({ ...datos, guardadoEn: Date.now() }))
-  } catch (e) {
-    console.error(e)
-  }
-}
-
-function borrarBorrador() {
-  try {
-    sessionStorage.removeItem(CLAVE_BORRADOR)
-  } catch (e) {
-    console.error(e)
-  }
-}
-
-function leerBorrador() {
-  try {
-    const texto = sessionStorage.getItem(CLAVE_BORRADOR)
-    if (!texto) return null
-    const b = JSON.parse(texto)
-    if (Date.now() - b.guardadoEn > VIGENCIA_BORRADOR_MS) return null
-    // Si el día elegido ya pasó, se conserva todo menos la fecha y la hora.
-    if (b.fechaElegida && b.fechaElegida < FechaISO(new Date())) {
-      b.fechaElegida = null
-      b.horaElegida = null
-    }
-    return b
-  } catch {
-    return null
-  }
-}
-
 export default function BookingPage() {
   const navigate = useNavigate()
   // `cargando`: mientras Supabase recupera la sesión guardada (al recargar la página).
@@ -320,7 +254,7 @@ export default function BookingPage() {
   // Una hora no está disponible si ya está reservada o si hoy ya pasó.
   const horaDisponible = (hora) => {
     if (horasOcupadas.includes(hora)) return false
-    if (fechaElegida === hoyISO && aMinutos(hora) <= ahoraMin) return false
+    if (fechaElegida === hoyISO && minutosDeHora(hora) <= ahoraMin) return false
     return true
   }
 

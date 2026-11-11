@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { useConfirmarCita } from '../../hooks/useConfirmarCita'
 import { useBarberia } from '../../context/useBarberia'
+import { HoyEntero } from '../../utils/fecha'
 
 /* ========= DATOS DE EJEMPLO — reemplazar con lógica real ========= */
 
@@ -19,11 +20,6 @@ const STOCK_EJEMPLO = [
 ]
 
 /* ================================================================== */
-
-function HoyEntero(d) {
-  const n = typeof d === 'object' ? d : new Date(d + 'T00:00:00')
-  return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0')
-}
 
 const LABEL_ESTADO = {
   pendiente: 'Pendiente',
