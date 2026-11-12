@@ -17,7 +17,7 @@ import BookingPage from '../../src/pages/BookingPage'
 import { renderWithProviders, sesionSimulada } from '../helpers/renderWithProviders'
 import { supabaseMock } from '../mocks/supabaseClient'
 
-vi.mock('../../src/context/AuthContext', async (importOriginal) => {
+vi.mock('../../src/context/useAuth', async (importOriginal) => {
   const real = await importOriginal()
   const { authSimulado } = await import('../helpers/renderWithProviders')
   return { ...real, useAuth: () => authSimulado.valor }
@@ -177,7 +177,7 @@ describe('BookingPage', () => {
   })
 
   // ------------------------------------------------------------ validacion
-  it('el boton de confirmar sigue bloqueado mientras falte un campo obligatorio', async () => {
+  it('el boton de confirmar avisa de que falta el teléfono en vez de quedar bloqueado', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const { container } = montar({ conSesion: true })
 
@@ -189,18 +189,19 @@ describe('BookingPage', () => {
 
     escribir(container, 'nombre', 'Ana Prueba')
     escribir(container, 'correo', 'ana@ejemplo.com')
-    // Falta el telefono.
-    expect(screen.getByRole('button', { name: 'CONFIRMAR RESERVACIÓN →' })).toBeDisabled()
+    // Falta el teléfono. El botón NO queda bloqueado: si lo estuviera, nadie
+    // sabría qué falta.
+    const boton = screen.getByRole('button', { name: 'CONFIRMAR RESERVACIÓN →' })
+    expect(boton).toBeEnabled()
 
-    escribir(container, 'telefono', '5512345678')
-    expect(screen.getByRole('button', { name: 'CONFIRMAR RESERVACIÓN →' })).toBeEnabled()
+    await user.click(boton)
+
+    expect(
+      await screen.findByText('Escribe tu teléfono para confirmar la cita.')
+    ).toBeInTheDocument()
   })
 
-  it.fails('avisa con un mensaje cuando falta un campo obligatorio', async () => {
-    // HUECO: el formulario solo marca `required` en los inputs y deshabilita el
-    // boton. No hay ningun mensaje de error en pantalla: el navegador nativo
-    // muestra su aviso, pero la aplicacion no dice nada.
-    // Cuando se implemente el mensaje, este test dejara de estar en `it.fails`.
+  it('F-05 · avisa por campo cuando faltan datos obligatorios', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const { container } = montar({ conSesion: true })
 
@@ -211,14 +212,30 @@ describe('BookingPage', () => {
     await user.click(screen.getByRole('button', { name: 'Siguiente →' }))
     escribir(container, 'nombre', 'Ana Prueba')
 
-    expect(screen.getByRole('alert')).toBeInTheDocument()
-    expect(screen.getByText(/obligatorio|requerido|falta/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'CONFIRMAR RESERVACIÓN →' }))
+
+    // Un aviso POR CAMPO, bajo el campo que falta.
+    expect(
+      await screen.findByText('Escribe tu teléfono para confirmar la cita.')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Escribe tu correo para recibir la confirmación.')
+    ).toBeInTheDocument()
+    // El campo se marca como inválido para el lector de pantalla.
+    expect(container.querySelector('[name="telefono"]')).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    )
+    // No se abre el panel de confirmación ni se inserta nada.
+    expect(screen.queryByText('Confirma tu reservación')).not.toBeInTheDocument()
+    expect(
+      supabaseMock.llamadas.find(
+        (c) => c.tipo === 'query' && c.tabla === 'citas' && c.operacion === 'insert'
+      )
+    ).toBeUndefined()
   })
 
-  it.fails('no deja confirmar con un telefono de formato invalido', async () => {
-    // HUECO: el campo `telefono` solo tiene `required`. No hay ninguna
-    // validacion de formato, asi que un numero de 3 digitos se acepta y la
-    // cita se guardaria con un telefono inservible para WhatsApp.
+  it('F-05 · no deja confirmar con un teléfono de formato inválido', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const { container } = montar({ conSesion: true })
 
@@ -231,7 +248,17 @@ describe('BookingPage', () => {
     escribir(container, 'telefono', '123')
     escribir(container, 'correo', 'ana@ejemplo.com')
 
-    expect(screen.getByRole('button', { name: 'CONFIRMAR RESERVACIÓN →' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'CONFIRMAR RESERVACIÓN →' }))
+
+    // El aviso explica cuántos dígitos se esperan.
+    expect(await screen.findByText(/3 dígitos/)).toBeInTheDocument()
+    expect(screen.queryByText('Confirma tu reservación')).not.toBeInTheDocument()
+    // No se inserta nada: la cita no se guardaría con un teléfono inservible.
+    expect(
+      supabaseMock.llamadas.find(
+        (c) => c.tipo === 'query' && c.tabla === 'citas' && c.operacion === 'insert'
+      )
+    ).toBeUndefined()
   })
 
   // --------------------------------------------------------- reglas de hora

@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.js",
+    "test:rendimiento": "vitest run --config vitest.rendimiento.config.js",
     "dev:smoke": "vite --mode smoke"
   },
   "dependencies": {

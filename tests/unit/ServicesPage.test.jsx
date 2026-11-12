@@ -9,6 +9,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useLocation } from 'react-router-dom'
 import ServicesPage from '../../src/pages/ServicesPage'
+import { supabaseMock } from '../mocks/supabaseClient'
 import {
   SERVICIOS,
   llamadaDe,
@@ -89,11 +90,8 @@ describe('ServicesPage · estados (F-02)', () => {
     })
   })
 
-  it.fails('F-02 · avisa cuando la carga de los servicios falla', async () => {
-    // HUECO REAL: `cargarServicios` revisa el `error` pero solo vacía la lista:
-    // un fallo de red se ve EXACTAMENTE igual que una barbería sin catálogo, y
-    // no hay ni mensaje ni botón de reintento (a diferencia de la portada,
-    // que sí los tiene).
+  it('F-02 · avisa cuando la carga de los servicios falla y ofrece reintentar', async () => {
+    const user = userEvent.setup()
     montarPublico(<ServicesPage />, {
       ruta: '/servicios',
       tabla: 'servicios',
@@ -101,22 +99,34 @@ describe('ServicesPage · estados (F-02)', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'No pudimos cargar los servicios.'
+      )
     })
-    expect(
-      screen.queryByText('No hay servicios registrados.')
-    ).not.toBeInTheDocument()
+    // Un fallo de red NO se ve como una barbería sin catálogo.
+    expect(screen.queryByText('No hay servicios registrados.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await waitFor(() => {
+      expect(
+        supabaseMock.llamadas.filter(
+          (c) => c.tipo === 'query' && c.tabla === 'servicios' && c.operacion === 'select'
+        ).length
+      ).toBeGreaterThanOrEqual(2)
+    })
   })
 
-  it.fails('F-02 · la duración se muestra con su unidad, como en la portada', async () => {
-    // HUECO REAL: la página imprime `servicio.duracion` tal cual, así que un
-    // servicio guardado como '30' se ve como «30» (sin «min») mientras que en
-    // la portada el mismo servicio sale como «30 min». La columna `duracion`
-    // es TEXT y puede traer '30' o '50 min': las dos vistas no coinciden.
+  it('F-02 · la duración se muestra con su unidad, como en la portada', async () => {
+    // La página imprimía `servicio.duracion` tal cual: un servicio guardado
+    // como '30' se veía como «30» y en la portada como «30 min».
     montarPublico(<ServicesPage />, { ruta: '/servicios', tabla: 'servicios', datos: SERVICIOS })
 
     await screen.findByText('Corte de cabello')
     const ficha = screen.getByText('Corte de cabello').closest('div.bg-neutral-900')
     expect(ficha).toHaveTextContent('30 min')
+    // Y el que viene con la unidad dentro se respeta igual.
+    const otra = screen.getByText('Perfilado de barba').closest('div.bg-neutral-900')
+    expect(otra).toHaveTextContent('50 min')
   })
 })

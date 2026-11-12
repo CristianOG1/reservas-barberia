@@ -1,7 +1,8 @@
 // src/pages/admin/ProductosAdmin.jsx
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { useBarberia } from '../../context/useBarberia'
+import { STOCK_MINIMO, productosConStockBajo } from '../../utils/resumen'
 import ProductoForm from './ProductoForm'
 
 /* ===== Íconos ===== */
@@ -50,7 +51,6 @@ function IconoChevron() {
 const COLORES_CATEGORIA = ['bg-primary', 'bg-amber', 'bg-green-600', 'bg-red-600', 'bg-slate-400']
 
 const ITEMS_POR_PAGINA = 6
-const STOCK_MINIMO = 5
 
 export default function ProductosAdmin() {
   // El catálogo es de UNA barbería: se filtra por su id.
@@ -61,39 +61,88 @@ export default function ProductosAdmin() {
   const [cargando, setCargando] = useState(true)
   const [mostrarForm, setMostrarForm] = useState(false)
   const [productoEditando, setProductoEditando] = useState(null)
+  // El botón "Ver" abre el MISMO formulario en modo detalle (como
+  // `ServiciosAdmin`): no hay una vista de detalle aparte y un ícono sin
+  // acción sería un control roto.
+  const [soloLectura, setSoloLectura] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [categoriaFiltro, setCategoriaFiltro] = useState('')
   const [pagina, setPagina] = useState(1)
+  // Los dos errores van separados: el de carga y el de escritura. Un fallo de
+  // red no puede verse como un catálogo vacío.
+  const [errorCarga, setErrorCarga] = useState('')
+  const [errorAccion, setErrorAccion] = useState('')
 
-  useEffect(() => {
-    if (barberiaId) cargarProductos()
-  }, [barberiaId])
-
-  const cargarProductos = async () => {
+  const cargarProductos = useCallback(async () => {
     setCargando(true)
-    const { data } = await supabase
+    setErrorCarga('')
+    const { data, error } = await supabase
       .from('productos')
       .select('*')
       .eq('barberia_id', barberiaId)
       .order('created_at', { ascending: false })
-    setProductos(data || [])
+    if (error) {
+      console.error(error)
+      setErrorCarga('No pudimos cargar los productos. Intenta de nuevo.')
+      setProductos([])
+    } else {
+      setProductos(data || [])
+    }
     setCargando(false)
     setPagina(1)
-  }
+  }, [barberiaId])
+
+  useEffect(() => {
+    if (barberiaId) {
+      // La carga se dispara FUERA del cuerpo síncrono del efecto: dentro de
+      // un efecto, un `setState` síncrono provoca renders en cascada (regla
+      // `react-hooks/set-state-in-effect`).
+      Promise.resolve().then(cargarProductos)
+    }
+  }, [barberiaId, cargarProductos])
 
   const handleEliminar = async (id) => {
     if (!confirm('¿Eliminar este producto?')) return
-    await supabase.from('productos').delete().eq('id', id).eq('barberia_id', barberiaId)
+    setErrorAccion('')
+    const { error } = await supabase
+      .from('productos')
+      .delete()
+      .eq('id', id)
+      .eq('barberia_id', barberiaId)
+    if (error) {
+      console.error(error)
+      setErrorAccion(`No se pudo eliminar el producto: ${error.message}`)
+      return
+    }
     cargarProductos()
   }
 
-  const abrirNuevo = () => { setProductoEditando(null); setMostrarForm(true) }
-  const abrirEditar = (producto) => { setProductoEditando(producto); setMostrarForm(true) }
-  const alGuardar = () => { setMostrarForm(false); cargarProductos() }
+  const cerrarForm = () => {
+    setMostrarForm(false)
+    setProductoEditando(null)
+    setSoloLectura(false)
+  }
+
+  const abrirNuevo = () => {
+    setProductoEditando(null)
+    setSoloLectura(false)
+    setMostrarForm(true)
+  }
+  const abrirEditar = (producto) => {
+    setProductoEditando(producto)
+    setSoloLectura(false)
+    setMostrarForm(true)
+  }
+  const abrirDetalle = (producto) => {
+    setProductoEditando(producto)
+    setSoloLectura(true)
+    setMostrarForm(true)
+  }
+  const alGuardar = () => { cerrarForm(); cargarProductos() }
 
   /* ---- Métricas vía query real ---- */
   const totalValorInventario = productos.reduce((acc, p) => acc + (p.precio * (p.stock ?? 0)), 0)
-  const stockBajo = productos.filter(p => (p.stock ?? 0) < STOCK_MINIMO).length
+  const stockBajo = productosConStockBajo(productos).length
 
   /* ---- Filtro + búsqueda ---- */
   const categorias = [...new Set(productos.map(p => p.categoria).filter(Boolean))]
@@ -138,6 +187,16 @@ export default function ProductosAdmin() {
           </button>
         </div>
       </div>
+
+      {/* ===== Avisos ===== */}
+      {errorAccion && (
+        <p
+          role="alert"
+          className="mb-4 rounded-lg border border-red-600/30 bg-red-50 px-4 py-2.5 text-sm text-red-600"
+        >
+          {errorAccion}
+        </p>
+      )}
 
       {/* 3 métricas */}
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -197,7 +256,17 @@ export default function ProductosAdmin() {
       </div>
 
       {/* Tabla */}
-      {productosFiltrados.length === 0 ? (
+      {errorCarga ? (
+        <div className="rounded-xl border border-red-600/30 bg-white p-5">
+          <p role="alert" className="text-sm text-red-600">{errorCarga}</p>
+          <button
+            onClick={cargarProductos}
+            className="mt-3 rounded-lg border border-slate-200 px-4 py-2 text-sm text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            Reintentar
+          </button>
+        </div>
+      ) : productosFiltrados.length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white px-5 py-12 text-center">
           <p className="text-sm text-slate-500">Aún no hay productos que coincidan con la búsqueda.</p>
           <button
@@ -277,20 +346,21 @@ export default function ProductosAdmin() {
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => abrirEditar(p)}
-                          aria-label="Editar"
+                          aria-label={`Editar ${p.nombre}`}
                           className="rounded-lg border border-slate-200 p-1.5 text-slate transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                         >
                           <IconoEditar />
                         </button>
                         <button
-                          aria-label="Ver"
+                          onClick={() => abrirDetalle(p)}
+                          aria-label={`Ver ${p.nombre}`}
                           className="rounded-lg border border-slate-200 p-1.5 text-slate transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                         >
                           <IconoVer />
                         </button>
                         <button
                           onClick={() => handleEliminar(p.id)}
-                          aria-label="Eliminar"
+                          aria-label={`Eliminar ${p.nombre}`}
                           className="rounded-lg border border-transparent p-1.5 text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                         >
                           <IconoEliminar />
@@ -336,7 +406,8 @@ export default function ProductosAdmin() {
         <ProductoForm
           producto={productoEditando}
           categorias={categorias}
-          onClose={() => setMostrarForm(false)}
+          soloLectura={soloLectura}
+          onClose={cerrarForm}
           onGuardado={alGuardar}
         />
       )}

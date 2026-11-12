@@ -9,7 +9,8 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import { AuthProvider, useAuth } from '../../src/context/AuthContext'
+import { AuthProvider } from '../../src/context/AuthProvider'
+import { useAuth } from '../../src/context/useAuth'
 import { supabaseMock } from '../mocks/supabaseClient'
 
 /** Lee del contexto lo mismo que hacen el resto de componentes de la app. */

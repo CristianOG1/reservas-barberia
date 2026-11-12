@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ProductosPage from '../../src/pages/ProductosPage'
+import { supabaseMock } from '../mocks/supabaseClient'
 import {
   PRODUCTOS,
   llamadaDe,
@@ -97,11 +98,8 @@ describe('ProductosPage · estados (F-03)', () => {
     })
   })
 
-  it.fails('F-03 · avisa cuando la carga de los productos falla', async () => {
-    // HUECO REAL: `obtenerProductos` revisa el `error` pero solo deja la
-    // lista vacía: un fallo de red se ve EXACTAMENTE igual que un catálogo
-    // sin productos, y no hay ni mensaje ni botón de reintento (a diferencia de
-    // la portada, que sí los tiene).
+  it('F-03 · avisa cuando la carga de los productos falla y ofrece reintentar', async () => {
+    const user = userEvent.setup()
     montarPublico(<ProductosPage />, {
       ruta: '/productos',
       tabla: 'productos',
@@ -109,18 +107,31 @@ describe('ProductosPage · estados (F-03)', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'No pudimos cargar los productos.'
+      )
     })
+    // Un fallo de red NO se ve como un catálogo vacío.
     expect(screen.queryByText(/Mostrando 0 productos/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await waitFor(() => {
+      expect(
+        supabaseMock.llamadas.filter(
+          (c) => c.tipo === 'query' && c.tabla === 'productos' && c.operacion === 'select'
+        ).length
+      ).toBeGreaterThanOrEqual(2)
+    })
   })
 
-  it.fails('F-03 · se puede filtrar por la categoría de cualquier producto', async () => {
-    // HUECO REAL: las categorías del filtro están escritas a mano en el
-    // componente ('Todos', 'Cabello', 'Barba', 'Cuidado Personal',
-    // 'Accesorios'). Un producto cuya categoría no esté en esa lista (p. ej.
-    // 'Estilizado') no se puede filtrar: solo aparece en «Todos».
+  it('F-03 · se puede filtrar por la categoría de cualquier producto', async () => {
+    // Las categorías del filtro estaban escritas a mano en el componente: un
+    // producto de otra categoría (p. ej. 'Estilizado') no se podía filtrar.
+    const user = userEvent.setup()
     const conCategoriaFuera = [
       { ...PRODUCTOS[0], id: 'p3', nombre: 'Pomada mate', categoria: 'Estilizado' },
+      { ...PRODUCTOS[1], id: 'p4', nombre: 'Cera modeladora', categoria: 'Estilizado' },
     ]
     montarPublico(<ProductosPage />, {
       ruta: '/productos',
@@ -129,6 +140,25 @@ describe('ProductosPage · estados (F-03)', () => {
     })
 
     await screen.findByText('Pomada mate')
-    expect(screen.getByRole('button', { name: 'Estilizado' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Estilizado' }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/Mostrando 2 productos/)).toBeInTheDocument()
+    })
+    expect(screen.getByText('Pomada mate')).toBeInTheDocument()
+    expect(screen.getByText('Cera modeladora')).toBeInTheDocument()
+  })
+
+  it('F-03 · el filtro solo muestra las categorías que existen en el catálogo', async () => {
+    montarPublico(<ProductosPage />, { ruta: '/productos', tabla: 'productos', datos: PRODUCTOS })
+
+    await screen.findByText('Aceite para barba')
+    // 'Todos' + las dos categorías reales ('Barba' y 'Cabello').
+    expect(screen.getByRole('button', { name: 'Todos' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Barba' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cabello' })).toBeInTheDocument()
+    // Las que estaban escritas a mano y no existen en los datos, no salen.
+    expect(screen.queryByRole('button', { name: 'Accesorios' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cuidado Personal' })).not.toBeInTheDocument()
   })
 })

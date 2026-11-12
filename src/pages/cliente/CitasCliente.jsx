@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 import { useBarberia } from '../../context/useBarberia'
 import { supabase } from '../../supabaseClient'
 import { FechaISO, aDate, formatearFecha, formato12h, recortarHora } from '../../utils/fecha'

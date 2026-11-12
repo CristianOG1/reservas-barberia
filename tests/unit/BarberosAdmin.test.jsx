@@ -86,9 +86,10 @@ describe('BarberosAdmin · equipo', () => {
 
     await screen.findByText('Barbero Uno')
 
-    // El Barbero Uno tiene dos citas de hoy y el Dos una.
-    expect(tarjetaDeBarbero('Barbero Uno')).toHaveTextContent(/2 de \d+ slots/)
-    expect(tarjetaDeBarbero('Barbero Dos')).toHaveTextContent(/1 de \d+ slots/)
+    // El Barbero Uno tiene dos citas de hoy y el Dos una. Sin «de N slots»:
+    // el salón no define cuántos huecos tiene.
+    expect(tarjetaDeBarbero('Barbero Uno')).toHaveTextContent('2 citas')
+    expect(tarjetaDeBarbero('Barbero Dos')).toHaveTextContent('1 cita')
   })
 })
 
@@ -111,7 +112,7 @@ describe('BarberosAdmin · filtros', () => {
     montarBarberosAdmin({ datos: BARBEROS })
 
     await screen.findByText('Barbero Uno')
-    await user.type(screen.getByPlaceholderText('Buscar por nombre, especialidad o sillón...'), 'barba')
+    await user.type(screen.getByPlaceholderText('Buscar por nombre o especialidad...'), 'barba')
 
     await waitFor(() => {
       expect(screen.queryByText('Barbero Uno')).not.toBeInTheDocument()
@@ -300,47 +301,33 @@ describe('BarberosAdmin · abrir el formulario desde la tarjeta', () => {
   })
 })
 
-describe('BarberosAdmin · huecos', () => {
-  it.fails('F-11 · la pestaña de los que no están disponibles se etiqueta bien', async () => {
-    // HUECO REAL: la etiqueta se arma con `No dispo${disponibles}s`, o sea que
-    // mete el numero de DISPONIBLES en mitad de la palabra: con 1 disponible
-    // sale "No dispo1s (1)". Es un texto roto que se ve en pantalla.
-    montarBarberosAdmin({ datos: BARBEROS })
-
-    await screen.findByText('Barbero Uno')
-    expect(
-      screen.getByRole('button', { name: 'No disponibles (1)' })
-    ).toBeInTheDocument()
-  })
-
-  it.fails('F-11 · la capacidad operativa no sale de un número de slots inventado', async () => {
-    // HUECO REAL: `CAPACIDAD_SLOTS_ESTIMADA = 8` es un dato de ejemplo (el
-    // propio codigo lo dice). La tarjeta "Capacidad operativa" y la barra
-    // "Citas para hoy" lo muestran como si fuera la agenda real del salon:
-    // el porcentaje que ve el barbero es fiction (AGENTS.md §18.34).
-    montarBarberosAdmin({ datos: BARBEROS })
-
-    await screen.findByText('Barbero Uno')
-    expect(tarjetaDe('Capacidad operativa')).not.toHaveTextContent('16 slots ocupados')
-  })
-
-  it.fails('F-11 · avisa cuando la carga del equipo falla', async () => {
-    // HUECO REAL: `cargarDatos` no revisa el `error`; hace
-    // `setBarberos(barberosRes.data || [])` y un fallo de red se ve igual que
-    // un equipo vacio (AGENTS.md §13.A).
+describe('BarberosAdmin · errores', () => {
+  it('F-11 · avisa cuando la carga del equipo falla y ofrece reintentar', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     montarBarberosAdmin({ error: { message: 'sin permiso' } })
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'No pudimos cargar el equipo. Intenta de nuevo.'
+      )
     })
+    // Un fallo de red NO se ve como un equipo vacío.
     expect(
       screen.queryByText('Aún no hay barberos registrados.')
     ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await waitFor(() => {
+      expect(
+        supabaseMock.llamadas.filter(
+          (c) => c.tipo === 'query' && c.tabla === 'barberos' && c.operacion === 'select'
+        ).length
+      ).toBeGreaterThanOrEqual(2)
+    })
   })
 
-  it.fails('F-11 · avisa cuando el borrado de un barbero falla', async () => {
-    // HUECO REAL: `handleEliminar` no revisa el `error` del `delete`: nunca se
-    // dice que el borrado fallo (AGENTS.md §13.D).
+  it('F-11 · avisa cuando el borrado de un barbero falla', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true)
     supabaseMock.on('barberos', 'delete', { data: null, error: { message: 'sin permiso' } })
@@ -352,9 +339,45 @@ describe('BarberosAdmin · huecos', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('sin permiso')
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'No se pudo eliminar el barbero: sin permiso'
+      )
     })
+    // El barbero sigue en la lista: no se finge el borrado.
+    expect(screen.getByText('Barbero Dos')).toBeInTheDocument()
 
     confirmar.mockRestore()
+  })
+})
+
+describe('BarberosAdmin · huecos', () => {
+  it('F-11 · la pestaña de los que no están disponibles se etiqueta bien', async () => {
+    // La etiqueta se armaba con `No dispo${disponibles}s`, así que metía el
+    // número de DISPONIBLES en mitad de la palabra: «No dispo1s (1)».
+    montarBarberosAdmin({ datos: BARBEROS })
+
+    await screen.findByText('Barbero Uno')
+    expect(
+      screen.getByRole('button', { name: 'No disponibles (1)' })
+    ).toBeInTheDocument()
+  })
+
+  it('F-11 · las cifras del panel salen de datos reales, sin capacidades inventadas', async () => {
+    // `CAPACIDAD_SLOTS_ESTIMADA = 8` era un dato de ejemplo que se mostraba
+    // como si fuera la agenda real. Ahora la tercera tarjeta dice quantas
+    // citas hay HOY (dato real) y las barras de cada barbero son relativas al
+    // mas ocupado del dia.
+    montarBarberosAdmin({ datos: BARBEROS })
+
+    await screen.findByText('Barbero Uno')
+
+    // No queda ninguna cifra de «slots» ni la tarjeta de capacidad.
+    expect(screen.queryByText('Capacidad operativa')).not.toBeInTheDocument()
+    expect(screen.queryByText(/slots/)).not.toBeInTheDocument()
+
+    // La tarjeta nueva: las 3 citas de hoy, repartidas entre 2 barberos.
+    const tarjeta = screen.getByText('Citas de hoy').closest('div.rounded-xl')
+    expect(tarjeta).toHaveTextContent('3')
+    expect(tarjeta).toHaveTextContent('repartidas entre 2 barberos')
   })
 })

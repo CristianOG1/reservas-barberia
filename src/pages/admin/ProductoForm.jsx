@@ -4,8 +4,9 @@
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { useBarberia } from '../../context/useBarberia'
+import { validarEnteroNoNegativo } from '../../utils/validaciones'
 
-export default function ProductoForm({ producto, categorias = [], onClose, onGuardado }) {
+export default function ProductoForm({ producto, categorias = [], soloLectura = false, onClose, onGuardado }) {
   const esEdicion = !!producto
   // La imagen nueva va a la carpeta de esta barbería y el alta lleva su id.
   const { barberia } = useBarberia()
@@ -16,11 +17,17 @@ export default function ProductoForm({ producto, categorias = [], onClose, onGua
     categoria: producto?.categoria || '',
     descripcion: producto?.descripcion || '',
     precio: producto?.precio || '',
+    // `productos.stock` es un entero nullable (default 0). El campo es editable
+    // desde el panel: F-10 dice que el stock se edita aquí.
+    stock: producto?.stock ?? '',
   })
   const [archivoImagen, setArchivoImagen] = useState(null)
   const [previewUrl, setPreviewUrl] = useState(producto?.imagen || null)
   const [guardando, setGuardando] = useState(false)
   const [errorMsg, setErrorMsg] = useState(null)
+  // Aviso por campo (hoy solo el stock): el error general es el generico de
+  // `handleSubmit` y no dice que campo falla.
+  const [erroresCampos, setErroresCampos] = useState({})
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value })
 
@@ -47,12 +54,30 @@ export default function ProductoForm({ producto, categorias = [], onClose, onGua
     setGuardando(true)
     setErrorMsg(null)
 
+    // El stock tiene que ser un entero >= 0. El campo NO lleva `min`/`step`/
+    // `required` a propósito: el navegador bloquearía el envío con su propio
+    // mensaje (en inglés) y el aviso de la aplicación no se vería nunca.
+    const problemaStock = validarEnteroNoNegativo(form.stock, {
+      vacio: 'Indica cuántas unidades hay en stock.',
+      formato: 'El stock debe ser un número entero mayor o igual que 0.',
+    })
+    setErroresCampos(problemaStock ? { stock: problemaStock } : {})
+    if (problemaStock) {
+      setGuardando(false)
+      return
+    }
+
     try {
       const urlImagen = await subirImagenSiHay()
-      const payload = { ...form, precio: Number(form.precio), imagen: urlImagen }
+      const payload = {
+        ...form,
+        precio: Number(form.precio),
+        stock: Number(form.stock),
+        imagen: urlImagen,
+      }
 
       const { error } = esEdicion
-        ? await supabase.from('productos').update(payload).eq('id', producto.id)
+        ? await supabase.from('productos').update(payload).eq('id', producto.id).eq('barberia_id', barberiaId)
         : await supabase.from('productos').insert([{ ...payload, barberia_id: barberiaId }])
 
       if (error) throw error
@@ -76,10 +101,12 @@ export default function ProductoForm({ producto, categorias = [], onClose, onGua
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-amber">Inventario del salón</p>
           <h3 className="font-serif text-lg text-navy">
-            {esEdicion ? 'Editar Producto' : 'Nuevo Producto'}
+            {soloLectura ? 'Detalle del Producto' : esEdicion ? 'Editar Producto' : 'Nuevo Producto'}
           </h3>
           <p className="mt-1 text-xs text-slate">
-            El precio es el de venta al público, en pesos mexicanos.
+            {soloLectura
+              ? 'Consulta la ficha completa del producto.'
+              : 'El precio es el de venta al público, en pesos mexicanos.'}
           </p>
         </div>
 
@@ -90,16 +117,22 @@ export default function ProductoForm({ producto, categorias = [], onClose, onGua
             alt={form.nombre ? `Imagen de ${form.nombre}` : 'Vista previa del producto'}
             className="h-16 w-16 shrink-0 rounded-lg object-cover ring-1 ring-slate-200"
           />
-          <label htmlFor="imagen" className="min-w-0 flex-1">
-            <span className="block text-sm text-slate">Imagen del producto</span>
-            <input
-              id="imagen"
-              type="file"
-              accept="image/*"
-              onChange={handleImagen}
-              className="mt-1 block w-full cursor-pointer text-xs text-slate file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:text-navy hover:file:bg-slate-200"
-            />
-          </label>
+          {soloLectura ? (
+            <p className="text-xs text-slate">
+              {producto?.imagen ? 'Imagen cargada' : 'Este producto no tiene imagen.'}
+            </p>
+          ) : (
+            <label htmlFor="imagen" className="min-w-0 flex-1">
+              <span className="block text-sm text-slate">Imagen del producto</span>
+              <input
+                id="imagen"
+                type="file"
+                accept="image/*"
+                onChange={handleImagen}
+                className="mt-1 block w-full cursor-pointer text-xs text-slate file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:text-navy hover:file:bg-slate-200"
+              />
+            </label>
+          )}
         </div>
 
         {/* ===== Nombre ===== */}
@@ -111,6 +144,7 @@ export default function ProductoForm({ producto, categorias = [], onClose, onGua
             value={form.nombre}
             onChange={handleChange}
             required
+            disabled={soloLectura}
             placeholder="Nombre del producto"
             className={soloCampo}
           />
@@ -125,6 +159,7 @@ export default function ProductoForm({ producto, categorias = [], onClose, onGua
             value={form.categoria}
             onChange={handleChange}
             required
+            disabled={soloLectura}
             placeholder="Escribe o elige una categoría"
             list="categorias-productos"
             className={soloCampo}
@@ -143,6 +178,7 @@ export default function ProductoForm({ producto, categorias = [], onClose, onGua
             value={form.descripcion}
             onChange={handleChange}
             rows={3}
+            disabled={soloLectura}
             placeholder="Composición, presentación, tamaño..."
             className={`${soloCampo} resize-none`}
           />
@@ -160,30 +196,66 @@ export default function ProductoForm({ producto, categorias = [], onClose, onGua
             value={form.precio}
             onChange={handleChange}
             required
+            disabled={soloLectura}
             placeholder="0"
             className={`${soloCampo} tabular-nums`}
           />
         </div>
 
+        {/* ===== Stock ===== */}
+        <div>
+          <label htmlFor="stock" className="block text-sm text-slate">
+            Unidades en stock *
+          </label>
+          <input
+            id="stock"
+            type="number"
+            inputMode="numeric"
+            name="stock"
+            value={form.stock}
+            onChange={handleChange}
+            disabled={soloLectura}
+            placeholder="0"
+            aria-invalid={erroresCampos.stock ? 'true' : undefined}
+            aria-describedby={erroresCampos.stock ? 'error-stock' : undefined}
+            className={`${soloCampo} tabular-nums`}
+          />
+          {erroresCampos.stock && (
+            <p id="error-stock" role="alert" className="mt-1 text-sm text-red-600">
+              {erroresCampos.stock}
+            </p>
+          )}
+        </div>
+
         {errorMsg && <p role="alert" className="text-sm text-red-600">{errorMsg}</p>}
 
         {/* ===== Acciones ===== */}
-        <div className="mt-2 flex gap-2">
-          <button
-            type="submit"
-            disabled={guardando}
-            className="flex-1 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1a38a0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50"
-          >
-            {guardando ? 'Guardando...' : 'Guardar'}
-          </button>
+        {soloLectura ? (
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-slate-200 px-5 py-2.5 text-sm text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="mt-2 w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1a38a0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
-            Cancelar
+            Cerrar
           </button>
-        </div>
+        ) : (
+          <div className="mt-2 flex gap-2">
+            <button
+              type="submit"
+              disabled={guardando}
+              className="flex-1 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1a38a0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50"
+            >
+              {guardando ? 'Guardando...' : 'Guardar'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-slate-200 px-5 py-2.5 text-sm text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
       </form>
     </div>
   )

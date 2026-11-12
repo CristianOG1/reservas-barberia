@@ -110,7 +110,10 @@ describe('BarberoForm · edición', () => {
       disponible: true,
       imagen: null,
     })
-    expect(llamada.filtros).toEqual([{ op: 'eq', columna: 'id', valor: 'bar-1' }])
+    expect(llamada.filtros).toEqual([
+      { op: 'eq', columna: 'id', valor: 'bar-1' },
+      { op: 'eq', columna: 'barberia_id', valor: 'b1' },
+    ])
   })
 
   it('F-11 · en edición el interruptor muestra la disponibilidad actual', () => {
@@ -158,12 +161,10 @@ describe('BarberoForm · edición', () => {
 })
 
 describe('BarberoForm · huecos', () => {
-  it.fails('F-11 · la edición acota la escritura a la barbería', async () => {
-    // HUECO REAL: el alta mete `barberia_id` en el insert y el listado borra
-    // con `.eq('id').eq('barberia_id')`, pero la EDICION solo filtra por
-    // `.eq('id')`. La RLS lo impide de todos modos (AGENTS.md §10.5): no es una
-    // fuga de datos, es que la consulta no lleva el mismo acotado que el resto
-    // de escrituras del panel.
+  it('F-11 · la edición acota la escritura a la barbería', async () => {
+    // Defensa en profundidad: el alta mete `barberia_id` en el insert y el
+    // listado borra con `.eq(`id`).eq(`barberia_id`)`; ahora la EDICIÓN también
+    // lleva el acotado. La RLS ya lo impedía (AGENTS.md §10.5).
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     montarBarberoForm({ barbero: BARBEROS[0] })
 

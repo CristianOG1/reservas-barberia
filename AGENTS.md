@@ -59,8 +59,9 @@ Características del stack que importan:
   más un bloque `@theme` con los tokens del dashboard (§11).
 - **No hay gestor de estado** (sin Redux/Zustand/Jotai). Solo `useState`, `useContext`,
   `useEffect` y props.
-- **No hay tests.** No hay script de test, ni runners, ni archivos de test.
-  No hay error boundaries.
+- **Hay tests automatizados** (Vitest + Testing Library), en `tests/`:
+  `pnpm test`, `pnpm test:coverage` y `pnpm test:integration`. La cobertura va en
+  `tests/coverage/` (gitignored). No hay error boundaries.
 - **No hay variables de entorno más allá de las 4 del proyecto** (`VITE_SUPABASE_URL`,
   `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_BARBERIA_SLUG` y `VITE_DOMINIO_BASE`;
   ver §14.1).
@@ -296,7 +297,9 @@ barberia/
 │   ├── App.css                         ⚠ CÓDIGO MUERTO (CSS del template Vite, no se importa)
 │   ├── assets/                         hero.png, react.svg, vite.svg — sin uso
 │   ├── context/
-│   │   ├── AuthContext.jsx             AuthProvider + useAuth (sesión, rol y barbería, §6.2)
+│   │   ├── auth.js                     el objeto Context de sesión (§6.2)
+│   │   ├── AuthProvider.jsx            el provider de sesión (rol y barbería, §6.2)
+│   │   ├── useAuth.js                  el hook del contexto de sesión (§6.2)
 │   │   ├── barberia.js                 solo `createContext` del contexto de barbería
 │   │   ├── BarberiaProvider.jsx        resuelve la barbería por slug (§3)
 │   │   ├── useBarberia.js              hook del contexto de barbería
@@ -314,7 +317,11 @@ barberia/
 │   │   ├── BookingForm.jsx             ⚠ CÓDIGO MUERTO (no importado, superseded por BookingPage)
 │   │   └── ProtejerRuta.jsx            ProtectedRoute (roles /admin y /cliente)
 │   ├── utils/
-│   │   └── rutaInicioPorRol.js        ruta de inicio según el rol (helper único, §5)
+│   │   ├── rutaInicioPorRol.js        ruta de inicio según el rol (helper único, §5)
+│   │   ├── validaciones.js            validarTelefono / validarObligatorios / validarEnteroNoNegativo
+│   │   ├── telefono.js                normalización de teléfonos para WhatsApp
+│   │   ├── fecha.js  formato.js  slug.js  dominio.js  borrador.js  citas.js
+│   │   ├── resumen.js                  calculos del resumen del panel (§9.2), sin React
 │   └── pages/
 │       ├── BookingPage.jsx             wizard de 3 pasos (985 líneas, el más grande)
 │       ├── LoginPage.jsx               login + registro (signUp) + retorno con `volverA`
@@ -543,9 +550,21 @@ export const supabase = createClient(supabaseUrl, supabaseKey)
 Singleton exportado. **Único punto de contacto con Supabase.** Nota: este es el único
 archivo del proyecto que usa comillas dobles y punto y coma (heredado del template).
 
-### 6.2 `src/context/AuthContext.jsx` (90 líneas, íntegro)
+### 6.2 `src/context/AuthProvider.jsx` (87 líneas, íntegro)
 
-Expone `{ session, cargando, login, logout, rol, cargandoRol, barberiaId, unirmeABarberia }` y un hook `useAuth()`.
+Expone `{ session, cargando, login, logout, rol, cargandoRol, barberiaId, unirmeABarberia }`.
+
+⚠ **El módulo está partido en tres archivos** (2026-11-11), con el mismo patrón que
+`barberia.js` / `BarberiaProvider.jsx` / `useBarberia.js`:
+
+| Archivo | Qué es |
+|---|---|
+| `src/context/auth.js` | El objeto `AuthContext` (`createContext()`) |
+| `src/context/AuthProvider.jsx` | El provider (lo que antes era `AuthContext.jsx`) |
+| `src/context/useAuth.js` | El hook `useAuth()` |
+
+El motivo fue la regla `react-refresh/only-export-components`: un archivo que exporta
+a la vez un componente y un hook rompe el Fast Refresh. **No vuelvas a juntarlos.**
 
 - Al montar: `supabase.auth.getSession()` → setea `session` y `cargando = false`.
 - Se suscribe con `supabase.auth.onAuthStateChange(...)` y limpia con
@@ -591,9 +610,10 @@ Reglas que cumple ese bloque, no las rompas:
 `AuthProvider` está montado en `main.jsx`, **fuera** de `App`. Moverlo dentro de `App`
 o de `BrowserRouter` rompe el guard de rutas.
 
-⚠ Sigue teniendo **1 error de lint** (`react-refresh/only-export-components`, línea 69):
-el archivo exporta `AuthProvider` y `useAuth`. No lo "arregles" de paso; si hay que
-partirlo, el contexto de configuración ya sirve de patrón (§9.1).
+✅ **0 errores de lint** (2026-11-11): el módulo se partió en `auth.js` +
+`AuthProvider.jsx` + `useAuth.js`, como se describe arriba. Los imports de `useAuth`
+apuntan a `context/useAuth` y el de `AuthProvider`, a `context/AuthProvider`.
+⚠ En los tests, el módulo que se mockea es `src/context/useAuth` (no el provider).
 
 ### 6.3 `src/pages/LoginPage.jsx` (121 líneas)
 
@@ -906,37 +926,72 @@ Indicador de ruta activa: fondo `bg-primary text-white` sobre el link activo
 (inactivo: `text-slate hover:bg-slate-100 hover:text-navy`).
 
 `main`: `flex-1 p-4 lg:p-6` que aloja el `<Outlet />`. La barra superior de búsqueda
-sigue siendo decorativa (no filtra nada).
+sigue siendo decorativa (no filtra nada). ⚠ **No hay ningún control sin acción**
+en el panel: la campana de «Notificaciones» (que además llevaba un punto rojo
+falso) se eliminó el 2026-11-11, junto con los botones muertos de `ResumenPage`
+(«Ver Calendario Completo», «+ Nueva Cita Rápida», «Filtrar», «Actualizar» y el
+«Ver» de cada fila).
 
 ### 9.2 `ResumenPage.jsx`
 
-Presentación actual: título `font-serif text-3xl text-bone-100 mb-8`; las 4
-tarjetas en `grid grid-cols-2 gap-4 sm:grid-cols-4 mb-10`, cada una
-`bg-ink-900 border border-ink-700 rounded-lg p-5` con la cifra en
-`font-serif text-3xl tabular-nums text-bone-100` y la etiqueta en
-`text-sm text-bone-600`. **El antiguo `<p className="text-2xl mb-2">{t.icono}</p>`
-ya no existe** (§18, punto 18).
+**Reescrito el 2026-11-11: no queda ninguna cifra de ejemplo.** Las cuatro
+tarjetas y el inventario se calculan con los datos reales de la barbería
+abierta (todas las consultas llevan `.eq('barberia_id', barberiaId)`), y los
+cálculos viven en **`src/utils/resumen.js`** (funciones puras, sin React).
 
-"Citas de esta semana" es un panel `bg-ink-900 border border-ink-700 rounded-lg`
-con un **rail vertical**: línea de 1px `before:w-px before:bg-ink-700` (con
-`last:before:hidden`) y un nodo `h-2.5 w-2.5 rounded-full` por cita, coloreado
-según `colorEstado` (§9.5). Antes era una lista plana con `border-b`.
+`cargarDatos()` hace **un `Promise.all` de 4 consultas** (ya no usa
+`count: 'exact', head: true`: hacen falta las filas, no solo el número):
 
-`cargarDatos()` hace **un `Promise.all` de 4 conteos** con
-`select('*', { count: 'exact', head: true })` (solo el número, no las filas):
-
-| Métrica | Consulta |
+| Dato | Consulta |
 |---|---|
-| Servicios | `from('servicios').select('*', {count:'exact', head:true})` |
-| Productos | `from('productos')…` |
-| Barberos activos | `from('barberos')….eq('disponible', true)` |
-| Citas totales | `from('citas')…` |
+| Servicios | `from('servicios').select('*').eq('barberia_id', barberiaId).order('created_at', asc)` |
+| Productos | `from('productos').select('*').eq('barberia_id', barberiaId).order('created_at', desc)` |
+| Barberos | `from('barberos').select('*').eq('barberia_id', barberiaId).order('created_at', asc)` |
+| Citas | `from('citas').select('*').eq('barberia_id', barberiaId).gte('fecha', hoy).lte('fecha', enUnaSemana).order('fecha', asc)` |
 
-Y un segundo bloque, "Citas de esta semana": `hoy = new Date().toISOString().split('T')[0]`
-y `enUnaSemana = now + 7 días`, con `.gte('fecha', hoy).lte('fecha', enUnaSemana).order('fecha')`.
+La ventana de las citas es `[hoy, hoy + 7 días]`, con `hoy = HoyEntero(new Date())`
+(hora **local**, §`src/utils/fecha.js`).
 
-Guard de carga: `if (cargando) return <p className="text-white">Cargando...</p>` (return
-temprano). Los valores se leen con `|| 0` para no romper si `count` llega `null`.
+**Las cuatro tarjetas y de dónde sale cada cifra:**
+
+| Tarjeta | Cifra | Detalle · apoyo |
+|---|---|---|
+| Citas para Hoy | `citasDeHoy(citasSemana, hoy).length` | `contarPorEstado(citasHoy, 'pendiente')` por confirmar · `citasSemana.length` en los próximos 7 días |
+| Productos en catálogo | `productos.length` | `productosConStockBajo(productos).length` con stock bajo · `totalStock(productos)` unidades en stock |
+| Barberos Activos | `barberosDisponibles(barberos)` de `barberos.length` | *disponibles* · `barberosEnPausa(barberos)` en pausa |
+| Servicios en catálogo | `servicios.length` | `categoriasDeServicios(servicios)` categorías · `servicios + productos` ítems totales |
+
+⚠ **Sin porcentajes de variación**: no hay serie histórica con la que
+calcular un «+12 % vs ayer», así que no se muestra. Antes salía fijo.
+
+**Encabezado**: el eyebrow lleva el **nombre real** de la barbería —
+`configuracion.nombre` y, si esa barbería todavía no tiene fila, el de
+`barberias.nombre` (los dos nombres pueden divergir, §18.63). Ya no existe el
+«Sede Central Atelier · Turno Matutino» inventado.
+
+**Los dos botones del encabezado tienen acción** (§18.35):
+
+- «Ver Calendario Completo» → `<Link to="/admin/citas">` (la agenda).
+- «+ Nueva Cita Rápida» → abre el modal `CitaManualForm` con `servicios` y
+  `barberos` **reales** (los que ya están en el estado); al guardar, se
+  recarga el resumen.
+
+**Errores**: `errorCarga` va **aparte** del aviso de escritura (`errorMsg`, que
+usa `useConfirmarCita`). Si la carga falla se pinta una tarjeta con
+`role="alert"` y botón **«Reintentar»** —el mismo patrón que los otros CRUD—
+y **no** se muestran las tarjetas de cifras: un fallo de red no puede verse
+igual que un salón sin datos (§13.A).
+
+**Inventario**: los productos reales ordenados por stock ascendente
+(`ordenarPorStock`), los 4 primeros, con su **stock real** y su precio real.
+Con el catálogo vacío sale «Aún no hay productos en el catálogo.».
+
+**Popularidad**: sale de `topServicios(citasSemana, 3)`, que **parte** los
+servicios de cada cita por `,` (una cita puede llevar varios) y calcula el
+porcentaje sobre el total de sesiones.
+
+Se eliminó además el chip «Con add-on / Servicio base»: la columna `citas.addon`
+ya no la escribe nadie (§18.2), así que la etiqueta era fija y sin información.
 
 ### 9.3 Patrón CRUD compartido (Servicios / Productos / Barberos)
 
@@ -1003,6 +1058,14 @@ ya rediseñado, nunca al revés.
   detalle en el proyecto y un ícono muerto sería un control roto.
 
 #### `BarberosAdmin.jsx` (tarjetas, sistema claro)
+
+⚠ **Las tres tarjetas y las barras salen de datos reales**: «En la Barbería Hoy»
+(barberos disponibles), «Pausa / Libre» (no disponibles) y «Citas de hoy» (las
+citas del día, con cuántos barberos las tienen). La barra de cada tarjeta se
+escala **de forma relativa** al barbero más ocupado del día. **No hay ninguna
+cifra de «slots» ni de «capacidad»**: el salón no tiene un modelo de horarios
+(§18.6) y una constante inventada se veía como si fuera la agenda real (la
+«capacidad operativa» con 8 slots por barbero se eliminó el 2026-11-11).
 
 - Tarjeta: `rounded-xl border border-slate-200 bg-white p-5` en
   `grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3`.
@@ -1099,9 +1162,17 @@ Presentación común (la vigente, la de `ServicioForm`):
   sigue siendo el genérico de `handleSubmit`.
 - En `ServicioForm`, Tarifa y Duración van en `grid gap-4 sm:grid-cols-2` para que
   en móvil apilen en vez de comprimirse.
-- `ServicioForm` acepta `soloLectura`: mismo formulario con los campos
-  `disabled` + `disabled:bg-slate-100`, sin selector de archivo y con un único
-  botón "Cerrar". Es lo que sirve el ícono "Ver" de la tabla.
+- `ServicioForm` y `ProductoForm` aceptan `soloLectura`: mismo formulario con
+  los campos `disabled` + `disabled:bg-slate-100`, sin selector de archivo y con
+  un único botón "Cerrar". Es lo que sirve el ícono "Ver" de la tabla: en
+  `ProductosAdmin` ese botón **no se quedó sin acción** (2026-11-11), abre el
+  `ProductoForm` en modo detalle.
+- **`ProductoForm` tiene el campo «Unidades en stock»** (2026-11-11): F-10 dice
+  «el stock se edita desde el panel». Se valida con `validarEnteroNoNegativo`
+  (`src/utils/validaciones.js`): entero ≥ 0, con aviso visible bajo el campo.
+  El campo **no** lleva `min`/`step`/`required` a propósito: el navegador
+  bloquearía el envío con su propio mensaje (en inglés) y el aviso de la
+  aplicación no se vería nunca.
 
 **Switch "Disponible" (solo `BarberoForm`)**
 
@@ -1286,7 +1357,7 @@ Marcado con `PENDIENTE` en el código, no lo tomes por implementado:
 | Menú móvil | `aria-controls="menu-movil-admin"` | `aria-controls="menu-movil-cliente"` |
 | Links | 6 | **1** ("Mis citas", `fin: true`) |
 | Cabecera del rail | "ADMIN SUITE" + "Nombre Barbería" | **"Portal del cliente"** |
-| Topbar | buscador decorativo + "Ver sitio web público" + notificaciones | **solo** "Hola, {nombre}" + "Ver sitio web" (`sm:inline-flex`) |
+| Topbar | buscador decorativo + "Ver sitio web público" | **solo** "Hola, {nombre}" + "Ver sitio web" (`sm:inline-flex`) |
 | Tarjeta de perfil | muestra estado "En línea" y `v1.0` | solo nombre y correo |
 
 - El rail y la barra móvil salen de `useConfiguracion()`, igual que el admin, así que
@@ -2777,8 +2848,20 @@ pnpm preview     # sirve dist/ localmente
 pnpm lint        # eslint .
 ```
 
-Son los **únicos 4 scripts** que existen en `package.json`. No hay `test`, ni
-`typecheck`, ni `format`, ni scripts de deploy.
+Los scripts que existen en `package.json`:
+
+```bash
+pnpm dev              # vite dev server con HMR
+pnpm build            # vite build -> dist/
+pnpm preview          # sirve dist/ localmente
+pnpm lint             # eslint .
+pnpm test             # vitest run (unit)
+pnpm test:coverage    # vitest run --coverage
+pnpm test:integration # vitest run --config vitest.integration.config.js
+pnpm dev:smoke        # vite --mode smoke
+```
+
+No hay `typecheck` (el proyecto es JS puro), ni `format`, ni scripts de deploy.
 
 Configuración relevante:
 - `vite.config.js` (íntegro): `plugins: [react(), tailwindcss()]`. Sin `server`, sin
@@ -2826,136 +2909,68 @@ añades una cuarta, documéntala aquí y en `.env` (que está gitignored, §16).
 **No hay tests automatizados.** La verificación es manual + lint + build.
 
 ```bash
-pnpm lint        # DEBE seguir fallando con EXACTAMENTE los mismos 10 errores (§15.1)
+pnpm test        # vitest run: la suite unitaria DEBE seguir en verde
+pnpm lint        # DEBE salir con 0 errores y 0 avisos (§15.1)
 pnpm build       # DEBE terminar sin errores
 pnpm dev         # smoke test manual en el navegador
 ```
 
-### 15.1 Línea base de lint (preexistente, medida)
+### 15.1 Línea base de lint (medida)
 
-`pnpm lint` **falla en el estado actual del repo** con:
+✅ **Medición del 2026-11-11: `pnpm lint` sale limpio — 0 errores, 0 avisos.**
 
-```
-✖ 19 problems (10 errors, 9 warnings)
-```
+Hasta el 2026-11-10 arrastraba 9 errores y 9 avisos. Se corrigieron en un bloque
+dedicado, **sin `eslint-disable` y sin tocar `eslint.config.js`**. El detalle de qué
+era cada uno (archivo, línea, regla y causa) está en `tests/reporte_lint.txt`.
 
-**Desglose exacto por archivo, línea y regla** (medido con
-`pnpm exec eslint . --format json` el 2026-10-12, después del pull `853ca9f..8809213`):
+| Regla | Antes | Ahora |
+|---|---|---|
+| `react-hooks/immutability` | 8 errores | 0 |
+| `react-refresh/only-export-components` | 1 error | 0 |
+| `react-hooks/exhaustive-deps` | 9 avisos | 0 |
+| **Total** | **9 errores / 9 avisos** | **0 / 0** |
 
-| # | Archivo | Línea | Regla |
-|---|---|---|---|
-| 1 | `src/context/AuthContext.jsx` | 69 | `react-refresh/only-export-components` |
-| 2 | `src/components/Servicios.jsx` | 25 | `react-hooks/immutability` |
-| 3 | `src/components/Productos.jsx` | 17 | `react-hooks/immutability` |
-| 4 | `src/pages/ServicesPage.jsx` | 12 | `react-hooks/immutability` |
-| 5 | `src/pages/ProductosPage.jsx` | 12 | `react-hooks/immutability` |
-| 6 | `src/pages/admin/BarberosAdmin.jsx` | 89 | `react-hooks/immutability` |
-| 7 | `src/pages/admin/CitasAdmin.jsx` | 296 | `react-hooks/immutability` |
-| 8 | `src/pages/admin/ProductosAdmin.jsx` | 64 | `react-hooks/immutability` |
-| 9 | `src/pages/admin/ResumenPage.jsx` | 77 | `react-hooks/immutability` |
-| 10 | `src/pages/admin/ServiciosAdmin.jsx` | 111 | `react-hooks/immutability` |
+**Cómo se corrigió, por si hay que repetirlo (2026-11-11):**
 
-Totales:
+- Los **9 cargadores** que su propio `useEffect` usaba **antes de declararlos**
+  (`Servicios.jsx`, `Productos.jsx`, `ServicesPage.jsx`, `ProductosPage.jsx`,
+  `ServiciosAdmin.jsx`, `ProductosAdmin.jsx`, `BarberosAdmin.jsx`, `CitasAdmin.jsx`,
+  `ResumenPage.jsx`):
+  1. se declaran **antes** del efecto y van envueltos en `useCallback([barberiaId])`.
+     Su identidad solo cambia cuando cambia la barbería, así que el efecto se
+     dispara exactamente igual que antes (sin cambio de comportamiento);
+  2. el efecto los dispara **fuera de su cuerpo síncrono**:
+     `Promise.resolve().then(cargarX)`.
+  Con eso se van `react-hooks/immutability` y `react-hooks/exhaustive-deps`.
+  ⚠ **No los vuelvas a dejar debajo del efecto**: la regla
+  `react-hooks/set-state-in-effect` marca cualquier `setState` alcanzable desde el
+  cuerpo del efecto, **aunque la función sea asíncrona y el `setState` ocurra
+  después del `await`**; por eso el disparo va en una microtarea.
+- `src/context/AuthContext.jsx` se partió en tres archivos (§6.2): `auth.js` (el
+  objeto Context), `AuthProvider.jsx` (el provider) y `useAuth.js` (el hook), con
+  el mismo patrón que `barberia.js` / `BarberiaProvider.jsx` / `useBarberia.js`.
+  Motivo: `react-refresh/only-export-components` marca cualquier archivo que
+  exporte a la vez un componente y un hook.
+  ⚠ En los **tests** el módulo que se mockea es `src/context/useAuth`, no el provider.
 
-| Regla | Cantidad |
+**Historia de la línea base** (registro; ya no aplica como estado actual):
+
+| Medición | Resultado |
 |---|---|
-| `react-hooks/immutability` | 9 |
-| `react-refresh/only-export-components` | 1 |
-| **Total** | **10 errores, 0 warnings** |
+| 2026-10-12 (tras el pull `853ca9f..8809213`) | 10 errores / 9 avisos |
+| 2026-10-16 (multi-barbería) | 10 errores / 9 avisos (los 9 avisos son nuevos: `exhaustive-deps` por el `barberiaId` en las deps) |
+| 2026-10-17 (membresías) | 10 errores / 9 avisos |
+| 2026-10-17 (superadmin) | 10 errores / 9 avisos |
+| 2026-10-17 (routing + recordatorios) | 10 errores / 9 avisos |
+| **2026-11-11** | **0 errores / 0 avisos** |
 
-✅ **Medición del 2026-10-16 (ya con el multi-barbería): `10 errors, 9 warnings`.** El
-número de **errores no cambió** (los mismos 10); las líneas se movieron porque todos los
-efectos de carga ganaron `barberiaId`:
+⚠ `CitasCliente.jsx` y `BarberiasSuper.jsx` siguen con un
+`// eslint-disable-next-line react-hooks/set-state-in-effect` en su efecto de carga:
+**no lo quites** (su carga sí se dispara desde el efecto) y **no lo extiendas a los
+otros 9 cargadores**: esos ya no lo necesitan.
 
-| # | Archivo | Línea | Regla |
-|---|---|---|---|
-| 1 | `src/context/AuthContext.jsx` | 90 | `react-refresh/only-export-components` |
-| 2 | `src/components/Servicios.jsx` | 29 | `react-hooks/immutability` |
-| 3 | `src/components/Productos.jsx` | 22 | `react-hooks/immutability` |
-| 4 | `src/pages/ServicesPage.jsx` | 16 | `react-hooks/immutability` |
-| 5 | `src/pages/ProductosPage.jsx` | 17 | `react-hooks/immutability` |
-| 6 | `src/pages/admin/BarberosAdmin.jsx` | 94 | `react-hooks/immutability` |
-| 7 | `src/pages/admin/CitasAdmin.jsx` | 417 | `react-hooks/immutability` |
-| 8 | `src/pages/admin/ProductosAdmin.jsx` | 69 | `react-hooks/immutability` |
-| 9 | `src/pages/admin/ResumenPage.jsx` | 82 | `react-hooks/immutability` |
-| 10 | `src/pages/admin/ServiciosAdmin.jsx` | 116 | `react-hooks/immutability` |
-
-⚠ **Los 9 avisos son nuevos y vienen del multi-barbería**: al pasar los efectos de
-`useEffect(() => { cargarX() }, [])` a
-`useEffect(() => { if (barberiaId) cargarX() }, [barberiaId])`, el plugin emite
-**además** el aviso `react-hooks/exhaustive-deps` ("missing dependency: 'cargarX'").
-Comprobado con `git show HEAD:src/components/Servicios.jsx`: ese mismo archivo daba
-`1 error, 0 warnings` antes. **No son errores y no se tocan** (§17); el arreglo real
-(envolver `cargarX` en `useCallback` y subirlo) es el task aparte que §15.1 prohíbe hacer
-"de paso". El único aviso que sí era un fallo propio —el `barberiaId` que faltaba en el
-efecto del modal de reagendar de `CitasCliente.jsx`— **ya se corrigió** añadiéndolo a las
-deps.
-
-✅ **Medición del 2026-10-17 (membresías): sigue en `10 errors, 9 warnings`, 0 nuevos.**
-Lo único que se movió fue el error de `AuthContext.jsx`: pasó de la línea 74 a la 90 al
-crecer el archivo con `unirmeABarberia` (§6.2). Los otros 9 errores y los 9 avisos siguen
-exactamente en las mismas líneas, y los tres archivos nuevos/tocados
-(`src/App.jsx`, `src/pages/LoginPage.jsx` y el propio `AuthContext.jsx`) dan **0
-problemas** salvo ese error preexistente. `App.jsx` sigue en la lista de "archivos con 0
-errores" **a pesar** del efecto nuevo: no declara nada después del `useEffect`.
-
-✅ **Medición del 2026-10-17 (superadmin): sigue en `10 errors, 9 warnings`, 0 nuevos.**
-Los **seis** archivos de la tarea —`rutaInicioPorRol.js`, `ProtejerRuta.jsx`, `App.jsx`,
-`SuperadminDashboard.jsx`, `BarberiasSuper.jsx` y `BarberiaForm.jsx`— dan **0 problemas**
-cada uno, así que ninguno aparece en el desglose de arriba. `BarberiasSuper.jsx` usa el
-patrón de carga de `CitasCliente` (`useCallback` + `useEffect` + el
-`eslint-disable-next-line react-hooks/set-state-in-effect`), que es el que evita el error
-`react-hooks/immutability`. ⚠ **La Edge Function `.ts` no la lintea `pnpm lint`**: el
-`eslint.config.js` solo mira `**/*.{js,jsx}`, así que `supabase/functions/crear-barberia`
-no hay que añadirlo a `globalIgnores` (verificado: el total no se movió al crearlo).
-⚠ Ojo con esto: **si una Edge Function se guarda como `.js` en vez de `.ts`, entra al lint**
-y `process` sale como `no-undef`. Pasó con un `index.js` de prueba el 2026-10-17 (11 errores
-en vez de 10); se resolvió al volver al `.ts`. Mantén las funciones en `.ts`.
-
-✅ **Medición del 2026-10-17 (routing del superadmin y barra de recordatorios): sigue en
-`10 errors, 9 warnings`, 0 nuevos.** `BarberiaProvider.jsx` da 0 problemas (todo lo suyo
-son funciones puras a nivel de módulo, sin hooks), y `CitasAdmin.jsx` conserva su error y su
-aviso preexistentes — **pero la línea del error se movió de 380 a 417** al meter
-`InterruptorCanal` (un componente de módulo) por encima del efecto de carga. Si añades
-código **por encima** de la línea ~380 de `CitasAdmin.jsx`, actualiza el número de la tabla
-de arriba.
-
-📈 **La línea base subió de 8 a 10** con el pull `853ca9f..8809213`, que puso a
-`Servicios.jsx` y `Productos.jsx` (los públicos) a leer de Supabase con el patrón
-`useEffect(() => { cargarX() }, [])` **antes** de declarar `cargarX` con `const`. Los
-otros 8 ya estaban (5 del admin, `AuthContext`, `ProductosPage` y `ServicesPage`).
-Fue un cambio del usuario; aquí queda registrado para que nadie lo cuente como
-regresión propia.
-
-Los 9 de `react-hooks/immutability` comparten el mismo mensaje,
-*"Cannot access variable before it is declared"*: el patrón
-`useEffect(() => { cargarX() }, [])` invoca una función declarada después con
-`const`.
-
-**Estos errores son baseline preexistente. NO deben corregirse como parte del
-rediseño visual ni de ningún trabajo no solicitado.** Reglas:
-
-- No los "arregles" de paso mientras haces otra cosa: mezclar un fix no solicitado
-  con tu cambio vuelve el diff imposible de revisar.
-- **No subas el número.** Si tu cambio añade un error, el total será > 10 y eso es
-  **un fallo tuyo**. El desglose por archivo de arriba es la referencia.
-- Si te piden arreglarlos, es un task aparte: mueve la función **arriba** del
-  `useEffect` o conviértela en `function` declaration / `useCallback`.
-
-**Archivos con 0 errores** (referencia de que el patrón se puede hacer bien):
-`App.jsx`, `main.jsx`, `Navbar.jsx`, `Hero.jsx`, `Contacto.jsx`, `LoginPage.jsx`,
-`BookingPage.jsx`, `supabaseClient.js`, `ConfiguracionProvider.jsx`,
-`configuracion.js`, `useConfiguracion.js`, `useConfirmarCita.js`, `rutaInicioPorRol.js`,
-`ProtejerRuta.jsx`,
-**`src/pages/cliente/ClienteDashboard.jsx` y `CitasCliente.jsx`**,
-**`src/pages/superadmin/SuperadminDashboard.jsx`, `BarberiasSuper.jsx` y
-`BarberiaForm.jsx`**, `AdminDashboard.jsx`, `ConfiguracionAdmin.jsx`, los 4 `*Form` y
-`CitaManualForm.jsx`.
-
-⚠ `CitasCliente.jsx` tiene un `// eslint-disable-next-line react-hooks/set-state-in-effect`
-en su efecto de carga: **no lo quites** al "arreglar" esa página, o aparecerá un error
-nuevo. El patrón correcto ya está aplicado ahí: `cargarCitas` en
-`useCallback([userId])` (§9.7).
+**Archivos con 0 errores y 0 avisos**: todos. La referencia de que el patrón se
+puede hacer bien ya no hace falta: el lint entero está limpio.
 
 **Histórico del rediseño visual del admin (9 etapas).** En cada etapa se ejecutó
 `pnpm lint` y no se introdujeron errores nuevos. Los totales de aquella época (6 y 7)
@@ -3111,7 +3126,7 @@ debería rotarse.
 |---|---|
 | `.env` | Credenciales de Supabase. Gitignored. **Nunca commitear, nunca imprimir en una respuesta, nunca subir.** |
 | `src/supabaseClient.js` | Único punto de conexión. Un typo en el nombre de la env var rompe **toda** la app silenciosamente. |
-| `src/context/AuthContext.jsx` | Sesión y `onAuthStateChange`. El cleanup incorrecto deja listeners duplicados. |
+| `src/context/AuthProvider.jsx` | Sesión y `onAuthStateChange`. El cleanup incorrecto deja listeners duplicados. |
 | `src/components/ProtejerRuta.jsx` | Guard de rutas de **`/admin` y `/cliente`**. Romperlo deja ambos paneles abiertos o inaccesibles. |
 | `src/main.jsx` | Orden de los providers (`BrowserRouter` > `AuthProvider`). |
 | `src/context/BarberiaProvider.jsx` | Resuelve la barbería por **slug** desde el subdominio contra `VITE_DOMINIO_BASE`, o con `VITE_BARBERIA_SLUG` si el host no es el dominio real; si no la encuentra, **ninguna ruta se monta** (§3). Una clave mal escrita en `VITE_DOMINIO_BASE`, un parseo mal del subdominio o un slug reservado sin reconocer dejan la app entera en "Esta barbería no está disponible" o en "Elige tu barbería". |
@@ -3402,9 +3417,9 @@ barberia_del_usuario()`, §10.5), no por rol. Verificado simulando roles: un cli
 | 31 | ~~Tokens del tema viejo en el admin~~ | **RESUELTO**: `src/pages/admin/` ya no usa ninguna clase `cream-*`, `coffee-*`, `terracotta-*`, `danger-*`, `ink-*`, `bone-*`, `brass-*`, `sage-*`, `muted-blue-*` ni `cancelled-*`. Los cuatro formularios están en tema claro (§9.4). `src/pages/cliente/` tampoco usa tokens del tema público (§17). |
 | 32 | `servicios.duracion` | Es TEXT y no tiene CHECK: conviven `'30'` (dato actual) y textos tipo `'50 min'`. `ServiciosAdmin.aMinutos()` normaliza para promediar y mostrar, y el formulario ya guarda minutos pelados (`type="number"`). El `servicio.costo` es `numeric`, no `precio` como en productos. |
 | 33 | `servicios.descripcion` | La fila "Corte de Cabello" la tiene vacía. La tabla muestra "Sin descripción" en `slate-400` en vez de una celda en blanco que parece un bug. |
-| 34 | `BarberosAdmin.CAPACIDAD_SLOTS_ESTIMADA` | Es una constante inventada (`= 8`) para "slots por barbero por día". Alimenta la métrica "Capacidad operativa" y la barra de citas de hoy de cada tarjeta. Está marcada como dato de ejemplo en el código; hace falta un modelo real de horarios/slots para que el número signifique algo. |
-| 35 | `ResumenPage.getAccentBarbero(i)` | Muestra **"Barbero N°{i + 1}"** inventado por índice de fila en la tabla de citas de hoy, y un color por posición. No lee `citas.barbero_id` aunque la columna exista. En un panel con datos reales eso es un dato falso, no un placeholder. |
-| 36 | `ProductosAdmin` — ícono "Ver" y "Contactar proveedor →" | Botones sin `onClick` y un `<a href="#">`. Son controles muertos: el mismo problema que se resolvió en `ServiciosAdmin` (donde "Ver" abre el form en `soloLectura`). |
+| 34 | ~~`BarberosAdmin.CAPACIDAD_SLOTS_ESTIMADA`~~ | **RESUELTO** (2026-11-11): la constante `= 8` (datos de ejemplo) y la tarjeta «Capacidad operativa» **se eliminaron**. Ahora la tercera tarjeta dice **cuántas citas hay hoy** (dato real) y las barras de cada barbero son relativas al más ocupado del día. No queda ninguna cifra de «slots» hardcodeada. ⚠ Lo que **sigue pendiente** es el modelo real de horarios/slots (§18.6), que es lo que permitiría una capacidad verdadeira. |
+| 35 | ~~`ResumenPage` — datos de ejemplo~~ | **RESUELTO** (2026-11-11): las tres cosas de esta fila. ① El «Barbero N°{i + 1}» por índice de fila ya no existe: `ResumenPage` resuelve el barbero real por `citas.barbero_id`. ② `METRICAS_EJEMPLO` y `STOCK_EJEMPLO` **ya no existen**: las cuatro tarjetas se calculan con los datos reales (§9.2) y los cálculos viven en `src/utils/resumen.js`. ③ El inventario ya **no pisa el `stock` real**: se muestran los productos reales ordenados por stock ascendente. ⚠ **Lo que sigue sin ser calculable**: la «ocupación» que nombra el criterio de F-08, porque el salón **no tiene modelo de horarios/slots** (§18.6) — cualquier porcentaje de ocupación sería inventado, igual que la capacidad fija que se quitó en `BarberosAdmin` (§18.34). |
+| 36 | ~~`ProductosAdmin` — ícono "Ver"~~ | **RESUELTO** (2026-11-11): el botón «Ver» abre el `ProductoForm` en modo detalle (`soloLectura`), igual que `ServiciosAdmin`. ✅ Y el otro («Contactar proveedor →») **ya no existía**: desapareció con el rediseño del admin (esta entrada describía la versión anterior del panel). |
 | 37 | `citas.estado` (datos) | Sigue habiendo **1 fila con `estado = 'Pendiente'`** (mayúscula) creada fuera de la app (verificado 2026-10-12). El `estado` es `text` libre, sin CHECK ni ENUM, y el admin compara `estado \|\| 'pendiente'` **de forma sensible a mayúsculas**: `CitasAdmin.accionesDe()` cae en `default` y esa fila se queda **sin botones de acción**. ⚠ Con el portal del cliente el efecto es doble: `CitasCliente` solo considera `pendiente`/`confirmada` en minúsculas, así que esa cita cae en **Historial**, y las RPC `cancelar_cita`/`reagendar_cita` rechazan la fila porque su `estado in ('pendiente','confirmada')` no matchea. **Normaliza el dato** (`update citas set estado = 'pendiente' where estado = 'Pendiente'`) o mete un CHECK; no lo cambies sin avisar. |
 | 38 | ~~`Navbar` — botón de cuenta~~ | **RESUELTO** (2026-10-12): `Navbar`, `Hero` y `LoginPage` usan ahora el helper único `rutaInicioPorRol(rol)` (§5) en vez de decidir el destino por su cuenta, y el rol viene de `perfiles`. Queda **0** lecturas de `user_metadata.role` en `src/`. |
 | 39 | ~~Seguridad: `signUp` público + `role` del cliente~~ | **RESUELTO** (2026-10-12): `LoginPage` ya **no manda `role`**, solo `full_name`. El alta la hace `trg_crear_perfil`, función `security definer` que inserta **siempre `'cliente'`** e **ignora `user_metadata`** a propósito (§10.6). Y `perfiles` no tiene política de INSERT ni de UPDATE, así que nadie puede auto-asignarse un rol ni desde la API. |
@@ -3444,6 +3459,8 @@ barberia_del_usuario()`, §10.5), no por rol. Verificado simulando roles: un cli
 | 73 | **`crear-barberia` no tiene límite de altas** | No hay rate limiting ni captcha: un superadmin (o su token filtrado) puede crear barberías y usuarios de auth sin tope. Hoy el rol es único y de confianza; si el panel se abriera a más gente, haría falta un límite. |
 | 74 | **La lista de slugs reservados está en cuatro sitios y ya no coinciden** | `www`, `app`, `admin`, `api`, `superadmin`, `mail`, `soporte` viven en el check `barberias_slug_valido` (§10.10), en la Edge Function `crear-barberia` y en `BarberiaForm`. El **2026-10-17** se añadió una **cuarta** copia, `SLUGS_RESERVADOS` en `BarberiaProvider.jsx` (§3), con dos reserved más: **`avisos` y `send`**. ⚠ **La base y el formulario NO conocen esos dos**: hoy se podría dar de alta una barbería con slug `avisos` (el `check` lo permite) y su sitio **nunca resolvería**, porque el resolver trata ese subdominio como infraestructura y cae en "Elige tu barbería". El fallo es en la dirección, no un error visible. **El arreglo es añadir `avisos` y `send` al `check` de la base y a las dos listas de la Edge Function y del formulario** (con una migración para el `check`); no se hizo en esta tarea por no incluir migraciones ni el backend. ⚠ Si añades un reservado, tócalos los cuatro: el `check` de la BD es el que manda y es el más difícil de cambiar. |
 | 75 | **`Abrir sitio` depende de `VITE_DOMINIO_BASE`** | `dominioBaseDeBarberias()` ya **no deduce el dominio del host contando sus partes** (eso fallaba con `gools.com.mx`, §3): lee `VITE_DOMINIO_BASE` y construye `https://<slug>.<base>`. El botón sale deshabilitado, con `title` explicativo, **solo si la variable no está definida** (local sin configurar). ✅ En un preview de Cloudflare ahora **sí** funciona, siempre que la build variable esté dada de alta; antes no (§9.9). ⚠ El valor es de compilación (§14.1): cambiarla en runtime no abre la dirección nueva. |
+| 76 | `ResumenPage` — datos de ejemplo y controles muertos | **RESUELTO** (2026-11-11): `METRICAS_EJEMPLO` y `STOCK_EJEMPLO` **no existen** (§9.2): las cuatro tarjetas salen de los datos reales de la barbería y el inventario muestra el `stock` real. El encabezado usa el nombre de `configuracion` (con `barberias.nombre` como respaldo) en vez de «Sede Central Atelier · Turno Matutino». Los dos botones del encabezado **tienen acción**: «Ver Calendario Completo» va a `/admin/citas` y «+ Nueva Cita Rápida» abre `CitaManualForm`. Y si la carga falla se avisa con `role="alert"` + «Reintentar», **sin** mostrar las cifras. ⚠ **Lo que no se pudo hacer**: la «ocupación» que pide el criterio de F-08, porque el salón no tiene modelo de horarios (§18.6). |
+| 77 | `BarberosAdmin` — `disponible` nulo y placeholder que promete el sillón | **RESUELTO** (2026-11-11): el panel contaba como «en pausa» a un barbero con `disponible = NULL` (`filter((b) => b.disponible)`), cuando la columna es nullable con default `true` y el resto de la app usa `?? true` (lo hace `BarberoForm`): el mismo barbero salía disponible en un panel y en pausa en otro. Ahora los dos usan `estaDisponible()` de `src/utils/resumen.js` (mismo sitio que `ResumenPage`). Y el buscador ya no promete «o sillón»: la búsqueda solo mira `nombre` y `especialidad` (`sillon_*` no lo usa nadie, §18.25), así que el placeholder dice «Buscar por nombre o especialidad...». |
 
 ---
 

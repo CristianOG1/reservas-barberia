@@ -51,7 +51,7 @@ export default function BarberoForm({ barbero, onClose, onGuardado }) {
       const payload = { ...form, imagen: urlImagen }
 
       const { error } = esEdicion
-        ? await supabase.from('barberos').update(payload).eq('id', barbero.id)
+        ? await supabase.from('barberos').update(payload).eq('id', barbero.id).eq('barberia_id', barberiaId)
         : await supabase.from('barberos').insert([{ ...payload, barberia_id: barberiaId }])
 
       if (error) throw error

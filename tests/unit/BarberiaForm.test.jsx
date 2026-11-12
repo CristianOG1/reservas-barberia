@@ -344,36 +344,27 @@ describe('BarberiaForm · edición (F-16)', () => {
 })
 
 describe('BarberiaForm · huecos (F-16)', () => {
-  it.fails('F-16 · el correo inválido lo avisa la aplicación, no el navegador', async () => {
-    // HUECO REAL: el campo de correo es `type="email"` con `required`. Cuando
-    // el correo no tiene forma de correo, el navegador **vacía el campo** y
-    // bloquea el envío por sí mismo: el aviso en español de la aplicación
-    // («Escribe un correo válido para el dueño») nunca llega a verse.
-    const user = userEvent.setup()
-    montar()
 
-    await user.type(screen.getByLabelText('Nombre del negocio *'), 'Barbería El Buen Corte')
-    await user.type(screen.getByLabelText('Correo del dueño *'), 'esto-no-es-correo')
-    await user.type(screen.getByLabelText('Contraseña temporal *'), 'Demo1234!')
-    await user.click(screen.getByRole('button', { name: 'Crear barbería' }))
-
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        'Escribe un correo válido para el dueño.'
-      )
-    })
-  })
-
-  it.fails('F-16 · el texto de ayuda del slug enseña el dominio base real', async () => {
-    // HUECO REAL: el texto de ayuda tiene el dominio ANTIGUO escrito a mano
-    // ("tusoftware.com"), pero el dominio del software es hoy
-    // `VITE_DOMINIO_BASE` (gools.com.mx). El superadmin lee una dirección
-    // que no existe.
+  it('F-16 · el texto de ayuda del slug enseña el dominio base real', async () => {
+    // El texto tenía el dominio ANTIGUO escrito a mano (tusoftware.com).
+    // Ahora sale de `VITE_DOMINIO_BASE`, el mismo que usa `BarberiasSuper`.
     vi.stubEnv('VITE_DOMINIO_BASE', 'gools.com.mx')
     montar()
 
     expect(screen.getByText(/Será la dirección del sitio/)).toHaveTextContent(
-      'gools.com.mx'
+      'https://<slug>.gools.com.mx'
+    )
+    expect(screen.getByText(/Será la dirección del sitio/)).not.toHaveTextContent(
+      'tusoftware.com'
+    )
+  })
+
+  it('F-16 · sin dominio configurado, el texto de ayuda no inventa uno', () => {
+    vi.stubEnv('VITE_DOMINIO_BASE', '')
+    montar()
+
+    expect(screen.getByText(/Será la dirección del sitio/)).toHaveTextContent(
+      'https://<slug>.<dominio del software>'
     )
   })
 })

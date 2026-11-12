@@ -2,7 +2,7 @@
 // Catálogo de Servicios: la carta que el barbero consulta para saber qué ofrece,
 // cuánto dura y cuánto cuesta. Mismo sistema visual que Resumen, Productos,
 // Barberos y Citas (fondo slate-50, superficies blancas, acento primary).
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { useBarberia } from '../../context/useBarberia'
 import { aMinutos } from '../../utils/formato'
@@ -107,26 +107,52 @@ export default function ServiciosAdmin() {
   const [busqueda, setBusqueda] = useState('')
   const [categoriaFiltro, setCategoriaFiltro] = useState('')
   const [pagina, setPagina] = useState(1)
+  // Los dos errores van separados: el de carga y el de escritura. Un fallo de
+  // red no puede verse como un catálogo vacío.
+  const [errorCarga, setErrorCarga] = useState('')
+  const [errorAccion, setErrorAccion] = useState('')
 
-  useEffect(() => {
-    if (barberiaId) cargarServicios()
-  }, [barberiaId])
-
-  const cargarServicios = async () => {
+  const cargarServicios = useCallback(async () => {
     setCargando(true)
-    const { data } = await supabase
+    setErrorCarga('')
+    const { data, error } = await supabase
       .from('servicios')
       .select('*')
       .eq('barberia_id', barberiaId)
       .order('created_at', { ascending: false })
-    setServicios(data || [])
+    if (error) {
+      console.error(error)
+      setErrorCarga('No pudimos cargar los servicios. Intenta de nuevo.')
+      setServicios([])
+    } else {
+      setServicios(data || [])
+    }
     setCargando(false)
     setPagina(1)
-  }
+  }, [barberiaId])
+
+  useEffect(() => {
+    if (barberiaId) {
+      // La carga se dispara FUERA del cuerpo síncrono del efecto: dentro de
+      // un efecto, un `setState` síncrono provoca renders en cascada (regla
+      // `react-hooks/set-state-in-effect`).
+      Promise.resolve().then(cargarServicios)
+    }
+  }, [barberiaId, cargarServicios])
 
   const handleEliminar = async (id) => {
     if (!confirm('¿Eliminar este servicio?')) return
-    await supabase.from('servicios').delete().eq('id', id).eq('barberia_id', barberiaId)
+    setErrorAccion('')
+    const { error } = await supabase
+      .from('servicios')
+      .delete()
+      .eq('id', id)
+      .eq('barberia_id', barberiaId)
+    if (error) {
+      console.error(error)
+      setErrorAccion(`No se pudo eliminar el servicio: ${error.message}`)
+      return
+    }
     cargarServicios()
   }
 
@@ -251,6 +277,16 @@ export default function ServiciosAdmin() {
         </div>
       </div>
 
+      {/* ===== Avisos ===== */}
+      {errorAccion && (
+        <p
+          role="alert"
+          className="mb-4 rounded-lg border border-red-600/30 bg-red-50 px-4 py-2.5 text-sm text-red-600"
+        >
+          {errorAccion}
+        </p>
+      )}
+
       {/* ===== 3 métricas ===== */}
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
@@ -323,7 +359,17 @@ export default function ServiciosAdmin() {
       </div>
 
       {/* ===== Tabla ===== */}
-      {serviciosFiltrados.length === 0 ? (
+      {errorCarga ? (
+        <div className="rounded-xl border border-red-600/30 bg-white p-5">
+          <p role="alert" className="text-sm text-red-600">{errorCarga}</p>
+          <button
+            onClick={cargarServicios}
+            className="mt-3 rounded-lg border border-slate-200 px-4 py-2 text-sm text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            Reintentar
+          </button>
+        </div>
+      ) : serviciosFiltrados.length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white px-5 py-12 text-center">
           <p className="text-sm text-slate-500">
             {servicios.length === 0

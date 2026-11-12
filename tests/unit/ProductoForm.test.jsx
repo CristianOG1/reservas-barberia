@@ -18,11 +18,12 @@ import {
 usarRelojFijo()
 
 /** Rellena el formulario con los datos de un producto nuevo. */
-async function rellenar(user, { nombre = 'Cera nueva', categoria = 'Estilizado', precio = '90' } = {}) {
+async function rellenar(user, { nombre = 'Cera nueva', categoria = 'Estilizado', precio = '90', stock = '8' } = {}) {
   await user.type(screen.getByLabelText('Nombre *'), nombre)
   await user.type(screen.getByLabelText('Categoría *'), categoria)
   await user.type(screen.getByLabelText('Descripción'), 'Producto de prueba.')
   await user.type(screen.getByLabelText('Precio de venta (MXN) *'), precio)
+  await user.type(screen.getByLabelText('Unidades en stock *'), stock)
 }
 
 describe('ProductoForm · alta', () => {
@@ -44,6 +45,7 @@ describe('ProductoForm · alta', () => {
       categoria: 'Estilizado',
       descripcion: 'Producto de prueba.',
       precio: 90,
+      stock: 8,
       imagen: null,
       barberia_id: 'b1',
     })
@@ -101,9 +103,13 @@ describe('ProductoForm · edición', () => {
       categoria: 'Barba',
       descripcion: 'Aceite nutritivo.',
       precio: 195,
+      stock: 12,
       imagen: 'https://ejemplo.com/foto.png',
     })
-    expect(llamada.filtros).toEqual([{ op: 'eq', columna: 'id', valor: 'p1' }])
+    expect(llamada.filtros).toEqual([
+      { op: 'eq', columna: 'id', valor: 'p1' },
+      { op: 'eq', columna: 'barberia_id', valor: 'b1' },
+    ])
   })
 
   it('F-10 · al elegir una imagen se sube a la carpeta de la barbería y se guarda su URL', async () => {
@@ -130,12 +136,10 @@ describe('ProductoForm · edición', () => {
 })
 
 describe('ProductoForm · huecos', () => {
-  it.fails('F-10 · la edición acota la escritura a la barbería', async () => {
-    // HUECO REAL: el alta mete `barberia_id` en el insert y el listado borra
-    // con `.eq('id').eq('barberia_id')`, pero la EDICION solo filtra por
-    // `.eq('id')`. La RLS lo impide de todos modos (AGENTS.md §10.5): no es una
-    // fuga de datos, es que la consulta no lleva el mismo acotado que el resto
-    // de escrituras del panel.
+  it('F-10 · la edición acota la escritura a la barbería', async () => {
+    // Defensa en profundidad: el alta mete `barberia_id` en el insert y el
+    // listado borra con `.eq(`id`).eq(`barberia_id`)`; ahora la EDICIÓN también
+    // lleva el acotado. La RLS ya lo impedía (AGENTS.md §10.5).
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     montarProductoForm({ producto: PRODUCTOS[0] })
 
@@ -150,25 +154,74 @@ describe('ProductoForm · huecos', () => {
     ])
   })
 
-  it.fails('F-10 · el formulario deja cambiar las unidades que hay en stock', async () => {
-    // HUECO REAL: `productos.stock` existe en la base, el panel lo muestra y
-    // hasta avisa de que hay que reponer, pero el formulario NO tiene campo
-    // para cambiarlo: el stock solo se puede tocar por SQL.
+  it('F-10 · el stock se edita desde el panel y se guarda', async () => {
+    // F-10: «el stock se edita desde el panel y se refleja en la disponibilidad».
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     montarProductoForm({ producto: PRODUCTOS[1] })
 
-    const campo = screen.queryByLabelText(/stock/i)
-    expect(campo).toBeInTheDocument()
+    const campo = screen.getByLabelText('Unidades en stock *')
+    // El producto de la fixture tiene 3 unidades.
+    expect(campo).toHaveValue(3)
 
-    if (campo) {
-      await user.clear(campo)
-      await user.type(campo, '25')
-      await user.click(screen.getByRole('button', { name: 'Guardar' }))
+    await user.clear(campo)
+    await user.type(campo, '25')
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
 
-      await waitFor(() => {
-        expect(llamadaDe('productos', 'update')).toBeDefined()
-      })
-      expect(llamadaDe('productos', 'update').carga.stock).toBe(25)
-    }
+    await waitFor(() => {
+      expect(llamadaDe('productos', 'update')).toBeDefined()
+    })
+    expect(llamadaDe('productos', 'update').carga.stock).toBe(25)
+  })
+
+  it('F-10 · un stock negativo que ya venía en la base no se puede guardar', async () => {
+    // En un `<input type="number">` no se puede teclear un «-», pero un stock
+    // negativo puede venir en la base: al editar ese producto, la aplicación
+    // no lo deja volver a guardarlo.
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const guardado = vi.fn()
+    montarProductoForm({
+      producto: { ...PRODUCTOS[1], stock: -3 },
+      onGuardado: guardado,
+    })
+
+    const campo = screen.getByLabelText('Unidades en stock *')
+    expect(campo).toHaveValue(-3)
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(
+      await screen.findByText('El stock debe ser un número entero mayor o igual que 0.')
+    ).toBeInTheDocument()
+    expect(campo).toHaveAttribute('aria-invalid', 'true')
+    expect(guardado).not.toHaveBeenCalled()
+    expect(llamadaDe('productos', 'update')).toBeUndefined()
+  })
+
+  it('F-10 · un stock con decimales se rechaza con su mensaje', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    montarProductoForm({ producto: PRODUCTOS[1] })
+
+    const campo = screen.getByLabelText('Unidades en stock *')
+    await user.clear(campo)
+    await user.type(campo, '1.5')
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(
+      await screen.findByText('El stock debe ser un número entero mayor o igual que 0.')
+    ).toBeInTheDocument()
+    expect(llamadaDe('productos', 'update')).toBeUndefined()
+  })
+
+  it('F-10 · un stock vacío se rechaza con su mensaje', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    montarProductoForm({ producto: PRODUCTOS[1] })
+
+    const campo = screen.getByLabelText('Unidades en stock *')
+    await user.clear(campo)
+    await user.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(
+      await screen.findByText('Indica cuántas unidades hay en stock.')
+    ).toBeInTheDocument()
+    expect(llamadaDe('productos', 'update')).toBeUndefined()
   })
 })

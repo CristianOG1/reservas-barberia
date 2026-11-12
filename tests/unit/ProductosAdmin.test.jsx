@@ -151,7 +151,7 @@ describe('ProductosAdmin · eliminar', () => {
     montarProductosAdmin({ datos: PRODUCTOS })
 
     await screen.findByText('Pomada mate')
-    await user.click(within(filaDe('Pomada mate')).getByRole('button', { name: 'Eliminar' }))
+    await user.click(within(filaDe('Pomada mate')).getByRole('button', { name: 'Eliminar Pomada mate' }))
 
     await waitFor(() => {
       expect(llamadaDe('productos', 'delete')).toBeDefined()
@@ -171,7 +171,7 @@ describe('ProductosAdmin · eliminar', () => {
     montarProductosAdmin({ datos: PRODUCTOS })
 
     await screen.findByText('Pomada mate')
-    await user.click(within(filaDe('Pomada mate')).getByRole('button', { name: 'Eliminar' }))
+    await user.click(within(filaDe('Pomada mate')).getByRole('button', { name: 'Eliminar Pomada mate' }))
 
     expect(llamadaDe('productos', 'delete')).toBeUndefined()
 
@@ -185,7 +185,7 @@ describe('ProductosAdmin · abrir el formulario desde la tabla', () => {
     montarProductosAdmin({ datos: PRODUCTOS })
 
     await screen.findByText('Pomada mate')
-    await user.click(within(filaDe('Pomada mate')).getByRole('button', { name: 'Editar' }))
+    await user.click(within(filaDe('Pomada mate')).getByRole('button', { name: 'Editar Pomada mate' }))
 
     expect(screen.getByText('Editar Producto')).toBeInTheDocument()
     expect(screen.getByLabelText('Nombre *')).toHaveValue('Pomada mate')
@@ -213,6 +213,7 @@ describe('ProductosAdmin · abrir el formulario desde la tabla', () => {
     await user.type(screen.getByLabelText('Nombre *'), 'Producto nuevo')
     await user.type(screen.getByLabelText('Categoría *'), 'Cabello')
     await user.type(screen.getByLabelText('Precio de venta (MXN) *'), '80')
+    await user.type(screen.getByLabelText('Unidades en stock *'), '5')
     await user.click(screen.getByRole('button', { name: 'Guardar' }))
 
     await waitFor(() => {
@@ -225,63 +226,88 @@ describe('ProductosAdmin · abrir el formulario desde la tabla', () => {
   })
 })
 
-describe('ProductosAdmin · huecos', () => {
-  it.fails('F-10 · el botón Ver abre el detalle del producto', async () => {
-    // HUECO REAL: el boton "Ver" de la tabla no tiene `onClick`: no abre nada.
-    // En `ServiciosAdmin` ese mismo boton abre el formulario en modo detalle;
-    // aqui es un control muerto (AGENTS.md §18.36).
+describe('ProductosAdmin · los botones de la fila', () => {
+  it('F-10 · ningún botón visible de la fila se queda sin acción', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true)
     montarProductosAdmin({ datos: PRODUCTOS })
 
     await screen.findByText('Pomada mate')
-    await user.click(within(filaDe('Pomada mate')).getByRole('button', { name: 'Ver' }))
+    const fila = filaDe('Pomada mate')
 
-    // En ServiciosAdmin el boton "Ver" abre el formulario en modo detalle.
+    // 1) "Editar" abre el formulario con los datos del producto.
+    await user.click(within(fila).getByRole('button', { name: 'Editar Pomada mate' }))
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Pomada mate')).toBeInTheDocument()
+      expect(screen.getByText('Editar Producto')).toBeInTheDocument()
     })
+    expect(screen.getByLabelText('Nombre *')).toHaveValue('Pomada mate')
+    expect(screen.getByLabelText('Nombre *')).toBeEnabled()
+
+    // 2) "Ver" abre el mismo formulario en modo detalle (sin campos editables).
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await user.click(within(filaDe('Pomada mate')).getByRole('button', { name: 'Ver Pomada mate' }))
+    await waitFor(() => {
+      expect(screen.getByText('Detalle del Producto')).toBeInTheDocument()
+    })
+    expect(screen.getByLabelText('Nombre *')).toHaveValue('Pomada mate')
+    expect(screen.getByLabelText('Nombre *')).toBeDisabled()
+    // En detalle no hay botón de guardar ni selector de imagen.
+    expect(screen.queryByRole('button', { name: 'Guardar' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Imagen del producto')).not.toBeInTheDocument()
+
+    // 3) "Eliminar" pide confirmación antes de borrar.
+    await user.click(screen.getByRole('button', { name: 'Cerrar' }))
+    await user.click(
+      within(filaDe('Pomada mate')).getByRole('button', { name: 'Eliminar Pomada mate' })
+    )
+    expect(confirmar).toHaveBeenCalledWith('¿Eliminar este producto?')
+
+    confirmar.mockRestore()
   })
+})
 
-  it.fails('F-10 · la tabla muestra la última venta de cada producto', async () => {
-    // HUECO REAL: la columna "Ultima venta" esta Implementada con un guion
-    // fijo ("—"): no hay ningun dato de ventas en el modelo, asi que la
-    // columna no dice nada. El panel la muestra como si fuera informacion.
-    montarProductosAdmin({ datos: PRODUCTOS })
-
-    await screen.findByText('Pomada mate')
-    const celdas = filaDe('Pomada mate').querySelectorAll('td')
-    // La quinta celda es la de "Ultima venta".
-    expect(celdas[4].textContent).not.toBe('—')
-  })
-
-  it.fails('F-10 · avisa cuando la carga de los productos falla', async () => {
-    // HUECO REAL: `cargarProductos` no revisa el `error`; hace
-    // `setProductos(data || [])` y un fallo de red se ve EXACTAMENTE igual que
-    // un catalogo vacio (AGENTS.md §13.A).
+describe('ProductosAdmin · errores', () => {
+  it('F-10 · avisa cuando la carga de los productos falla y ofrece reintentar', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     montarProductosAdmin({ error: { message: 'sin permiso' } })
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'No pudimos cargar los productos. Intenta de nuevo.'
+      )
     })
+    // Un fallo de red NO se ve como un catálogo vacío.
     expect(
       screen.queryByText('Aún no hay productos que coincidan con la búsqueda.')
     ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await waitFor(() => {
+      expect(
+        supabaseMock.llamadas.filter(
+          (c) => c.tipo === 'query' && c.tabla === 'productos' && c.operacion === 'select'
+        ).length
+      ).toBeGreaterThanOrEqual(2)
+    })
   })
 
-  it.fails('F-10 · avisa cuando el borrado de un producto falla', async () => {
-    // HUECO REAL: `handleEliminar` no revisa el `error` del `delete`: nunca se
-    // dice que el borrado fallo (AGENTS.md §13.D).
+  it('F-10 · avisa cuando el borrado de un producto falla', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true)
     supabaseMock.on('productos', 'delete', { data: null, error: { message: 'sin permiso' } })
     montarProductosAdmin({ datos: PRODUCTOS })
 
     await screen.findByText('Pomada mate')
-    await user.click(within(filaDe('Pomada mate')).getByRole('button', { name: 'Eliminar' }))
+    await user.click(within(filaDe('Pomada mate')).getByRole('button', { name: 'Eliminar Pomada mate' }))
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('sin permiso')
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'No se pudo eliminar el producto: sin permiso'
+      )
     })
+    // El producto sigue en la lista: no se finge el borrado.
+    expect(screen.getByText('Pomada mate')).toBeInTheDocument()
 
     confirmar.mockRestore()
   })

@@ -63,7 +63,10 @@ describe('CitaManualForm · modo edición (reprogramar)', () => {
 
     expect(llamadaDe('citas', 'insert')).toBeUndefined()
     const llamada = llamadaDe('citas', 'update')
-    expect(llamada.filtros).toEqual([{ op: 'eq', columna: 'id', valor: 'c9' }])
+    expect(llamada.filtros).toEqual([
+      { op: 'eq', columna: 'id', valor: 'c9' },
+      { op: 'eq', columna: 'barberia_id', valor: BARBERIA.id },
+    ])
     expect(llamada.carga).toMatchObject({
       nombre: 'Cliente Programado',
       telefono: '5512345678',
@@ -114,7 +117,7 @@ describe('CitaManualForm · modo edición (reprogramar)', () => {
 })
 
 describe('CitaManualForm · huecos', () => {
-  it.fails('F-08 · la reprogramación acota la escritura a la barbería', async () => {
+  it('F-08 · la reprogramación acota la escritura a la barbería', async () => {
     // HUECO REAL: el alta manual mete `barberia_id` en el insert, pero la
     // EDICION solo filtra por `.eq('id')`. La RLS lo impide de todos modos
     // (politica `Admin escribe`, AGENTS.md §10.5), asi que no es una fuga de

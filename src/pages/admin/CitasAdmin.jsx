@@ -5,7 +5,7 @@
 // recordatorios. Los datos vienen de `citas` y `barberos` reales; lo que aún no
 // existe en el modelo (pago, recordatorios, vista calendario) se muestra como UI
 // navegable y está marcado en el código como pendiente de lógica.
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import CitaManualForm from './CitaManualForm'
 import { useConfirmarCita } from '../../hooks/useConfirmarCita'
@@ -263,6 +263,9 @@ export default function CitasAdmin() {
   const [servicios, setServicios] = useState([])
   const [cargando, setCargando] = useState(true)
   const [errorMsg, setErrorMsg] = useState(null)
+  // El error de carga va aparte del de escritura: un fallo de red no puede
+  // verse como un día sin citas.
+  const [errorCarga, setErrorCarga] = useState('')
 
   // Controles
   const [fechaSeleccionada, setFechaSeleccionada] = useState(() => FechaISO(new Date()))
@@ -292,23 +295,38 @@ export default function CitasAdmin() {
   // "hoy", "ahora" y la semana no se mueven a media sesión.
   const [reloj] = useState(() => new Date())
 
-  useEffect(() => {
-    if (barberiaId) cargarDatos()
-  }, [barberiaId])
-
-  const cargarDatos = async () => {
+  const cargarDatos = useCallback(async () => {
     setCargando(true)
+    setErrorCarga('')
     const [citasRes, barberosRes, serviciosRes] = await Promise.all([
       supabase.from('citas').select('*').eq('barberia_id', barberiaId).order('fecha', { ascending: true }).order('hora', { ascending: true }),
       supabase.from('barberos').select('*').eq('barberia_id', barberiaId).order('created_at', { ascending: true }),
       supabase.from('servicios').select('*').eq('barberia_id', barberiaId).order('nombre', { ascending: true }),
     ])
 
-    setCitas(citasRes.data || [])
-    setBarberos(barberosRes.data || [])
-    setServicios(serviciosRes.data || [])
+    // Un fallo de red no puede verse como un día sin citas.
+    if (citasRes.error || barberosRes.error || serviciosRes.error) {
+      console.error(citasRes.error || barberosRes.error || serviciosRes.error)
+      setErrorCarga('No pudimos cargar las citas. Intenta de nuevo.')
+      setCitas([])
+      setBarberos([])
+      setServicios([])
+    } else {
+      setCitas(citasRes.data || [])
+      setBarberos(barberosRes.data || [])
+      setServicios(serviciosRes.data || [])
+    }
     setCargando(false)
-  }
+  }, [barberiaId])
+
+  useEffect(() => {
+    if (barberiaId) {
+      // La carga se dispara FUERA del cuerpo síncrono del efecto: dentro de
+      // un efecto, un `setState` síncrono provoca renders en cascada (regla
+      // `react-hooks/set-state-in-effect`).
+      Promise.resolve().then(cargarDatos)
+    }
+  }, [barberiaId, cargarDatos])
 
   const barberoPorId = (id) => barberos.find((b) => b.id === id) || null
 
@@ -970,7 +988,17 @@ export default function CitasAdmin() {
             </div>
           </div>
 
-          {citasFiltradas.length === 0 ? (
+          {errorCarga ? (
+            <div className="rounded-xl border border-red-600/30 bg-white p-5">
+              <p role="alert" className="text-sm text-red-600">{errorCarga}</p>
+              <button
+                onClick={cargarDatos}
+                className="mt-3 rounded-lg border border-slate-200 px-4 py-2 text-sm text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                Reintentar
+              </button>
+            </div>
+          ) : citasFiltradas.length === 0 ? (
             <div className="px-5 py-12 text-center">
               {citasDelDia.length === 0 ? (
                 <>

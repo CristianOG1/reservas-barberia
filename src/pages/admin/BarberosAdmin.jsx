@@ -1,8 +1,9 @@
 // src/pages/admin/BarberosAdmin.jsx
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../supabaseClient'
 import { useBarberia } from '../../context/useBarberia'
+import { barberosDisponibles, barberosEnPausa, estaDisponible } from '../../utils/resumen'
 import BarberoForm from './BarberoForm'
 
 /* ===== Íconos ===== */
@@ -58,8 +59,6 @@ function IconoEliminar() {
 
 /* ===== Configuración ===== */
 
-const CAPACIDAD_SLOTS_ESTIMADA = 8 // Datos de ejemplo: slots estimados por barbero por día
-
 function Stars({ rating, total }) {
   const r = Math.round(rating)
   return (
@@ -88,14 +87,14 @@ export default function BarberosAdmin() {
   const [barberoEditando, setBarberoEditando] = useState(null)
   const [busqueda, setBusqueda] = useState('')
   const [filtro, setFiltro] = useState('todos') // todos | disponibles | noDisponibles
+  // `errorMsg` es el aviso de escritura (el switch y el borrado); `errorCarga`
+  // es el de la carga. Un fallo de red no puede verse como un equipo vacío.
   const [errorMsg, setErrorMsg] = useState(null)
+  const [errorCarga, setErrorCarga] = useState('')
 
-  useEffect(() => {
-    if (barberiaId) cargarDatos()
-  }, [barberiaId])
-
-  const cargarDatos = async () => {
+  const cargarDatos = useCallback(async () => {
     setCargando(true)
+    setErrorCarga('')
 
     const hoy = new Date().toISOString().split('T')[0]
 
@@ -104,14 +103,40 @@ export default function BarberosAdmin() {
       supabase.from('citas').select('*').eq('barberia_id', barberiaId).eq('fecha', hoy),
     ])
 
-    setBarberos(barberosRes.data || [])
-    setCitasHoy(citasRes.data || [])
+    if (barberosRes.error || citasRes.error) {
+      console.error(barberosRes.error || citasRes.error)
+      setErrorCarga('No pudimos cargar el equipo. Intenta de nuevo.')
+      setBarberos([])
+      setCitasHoy([])
+    } else {
+      setBarberos(barberosRes.data || [])
+      setCitasHoy(citasRes.data || [])
+    }
     setCargando(false)
-  }
+  }, [barberiaId])
+
+  useEffect(() => {
+    if (barberiaId) {
+      // La carga se dispara FUERA del cuerpo síncrono del efecto: dentro de
+      // un efecto, un `setState` síncrono provoca renders en cascada (regla
+      // `react-hooks/set-state-in-effect`).
+      Promise.resolve().then(cargarDatos)
+    }
+  }, [barberiaId, cargarDatos])
 
   const handleEliminar = async (id) => {
     if (!confirm('¿Eliminar este barbero?')) return
-    await supabase.from('barberos').delete().eq('id', id).eq('barberia_id', barberiaId)
+    setErrorMsg(null)
+    const { error } = await supabase
+      .from('barberos')
+      .delete()
+      .eq('id', id)
+      .eq('barberia_id', barberiaId)
+    if (error) {
+      console.error(error)
+      setErrorMsg(`No se pudo eliminar el barbero: ${error.message}`)
+      return
+    }
     cargarDatos()
   }
 
@@ -119,7 +144,7 @@ export default function BarberosAdmin() {
   // Optimista, pero verificada: `.select()` devuelve la fila actualizada, así que
   // sabemos si el UPDATE se aplicó de verdad o si RLS/red lo rechazaron.
   const toggleDisponible = async (barbero) => {
-    const nuevoValor = !barbero.disponible
+    const nuevoValor = !estaDisponible(barbero)
 
     // Cambio optimista: el switch se mueve al instante.
     setBarberos(barberos.map((b) => (b.id === barbero.id ? { ...b, disponible: nuevoValor } : b)))
@@ -145,12 +170,22 @@ export default function BarberosAdmin() {
   const abrirEditar = (barbero) => { setBarberoEditando(barbero); setMostrarForm(true) }
   const alGuardar = () => { setMostrarForm(false); cargarDatos() }
 
-  /* ---- Métricas ---- */
-  const disponibles = barberos.filter((b) => b.disponible).length
-  const noDisponibles = barberos.filter((b) => !b.disponible).length
+  // Cuántas citas de hoy tiene cada barbero (las de `citasHoy`, que ya viene
+  // filtrada por la barbería y por el día).
+  const citasPorBarbero = (barbero) =>
+    citasHoy.filter((c) => c.barbero_id === barbero.id).length
+
+  /* ---- Métricas ----
+     Todas salen de datos reales: la disponibilidad de cada barbero y las citas
+     que hay hoy. NO hay ninguna capacidad inventada: el salón no tiene un
+     modelo de horarios (AGENTS.md §18.6) y una cifra de «slots» sería ficción. */
+  const disponibles = barberosDisponibles(barberos)
+  const noDisponibles = barberosEnPausa(barberos)
   const citasHoyCount = citasHoy.length
-  const capacidadTotal = Math.max(barberos.length * CAPACIDAD_SLOTS_ESTIMADA, 1)
-  const capacidadPct = Math.min(Math.round((citasHoyCount / capacidadTotal) * 100), 100)
+  const barberosConCitas = barberos.filter((b) => citasPorBarbero(b) > 0).length
+  // Escala RELATIVA de las barras: el barbero más ocupado del día. No hay
+  // ningún máximo fijo, porque el salón no define cuántos huecos tiene.
+  const maxCitasPorBarbero = Math.max(1, ...barberos.map(citasPorBarbero))
 
   /* ---- Filtrado ---- */
   const filtrados = barberos.filter((b) => {
@@ -160,13 +195,10 @@ export default function BarberosAdmin() {
     const coincideTab = filtro === 'todos'
       ? true
       : filtro === 'disponibles'
-        ? b.disponible
-        : !b.disponible
+        ? estaDisponible(b)
+        : !estaDisponible(b)
     return coincideBusqueda && coincideTab
   })
-
-  const citasPorBarbero = (barbero) =>
-    citasHoy.filter((c) => c.barbero_id === barbero.id).length
 
   if (cargando) return <p className="text-slate-500">Cargando...</p>
 
@@ -227,17 +259,20 @@ export default function BarberosAdmin() {
           <p className="mt-2 text-xs text-slate">sin turno activo</p>
         </div>
 
-        {/* Capacidad operativa */}
+        {/* Citas de hoy */}
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-50 text-primary mb-4">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
               <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
             </svg>
           </div>
-          <p className="font-serif text-3xl text-navy">{capacidadPct}%</p>
-          <p className="mt-1 text-sm text-slate">Capacidad operativa</p>
-          <p className="mt-2 text-xs text-slate">{citasHoyCount} de {capacidadTotal} slots ocupados</p>
-          {/* Placeholder: sin datos reales de capacidad total configurables */}
+          <p className="font-serif text-3xl text-navy">{citasHoyCount}</p>
+          <p className="mt-1 text-sm text-slate">Citas de hoy</p>
+          <p className="mt-2 text-xs text-slate">
+            {citasHoyCount === 0
+              ? 'sin citas para hoy'
+              : `repartidas entre ${barberosConCitas} ${barberosConCitas === 1 ? 'barbero' : 'barberos'}`}
+          </p>
         </div>
       </div>
 
@@ -251,7 +286,7 @@ export default function BarberosAdmin() {
             type="search"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar por nombre, especialidad o sillón..."
+            placeholder="Buscar por nombre o especialidad..."
             className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-navy outline-none placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary-100"
           />
         </div>
@@ -259,7 +294,7 @@ export default function BarberosAdmin() {
           {[
             { k: 'todos', label: `Todos (${barberos.length})` },
             { k: 'disponibles', label: `Disponibles (${disponibles})` },
-            { k: 'noDisponibles', label: `No dispo${disponibles}s (${noDisponibles})` },
+            { k: 'noDisponibles', label: `No disponibles (${noDisponibles})` },
           ].map((t) => (
             <button
               key={t.k}
@@ -277,7 +312,17 @@ export default function BarberosAdmin() {
       </div>
 
       {/* Grid de barberos */}
-      {filtrados.length === 0 ? (
+      {errorCarga ? (
+        <div className="rounded-xl border border-red-600/30 bg-white p-5">
+          <p role="alert" className="text-sm text-red-600">{errorCarga}</p>
+          <button
+            onClick={cargarDatos}
+            className="mt-3 rounded-lg border border-slate-200 px-4 py-2 text-sm text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            Reintentar
+          </button>
+        </div>
+      ) : filtrados.length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white px-5 py-12 text-center">
           <p className="text-sm text-slate-500">
             {busqueda ? 'No hay barberos que coincidan con la búsqueda.' : 'Aún no hay barberos registrados.'}
@@ -319,7 +364,7 @@ export default function BarberosAdmin() {
                     </div>
                     {/* Punto de estado */}
                     <span className={`absolute bottom-0.5 right-0.5 h-3 w-3 rounded-full border-2 border-white ${
-                      b.disponible ? 'bg-green-600' : 'bg-slate-400'
+                      estaDisponible(b) ? 'bg-green-600' : 'bg-slate-400'
                     }`} />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -349,38 +394,40 @@ export default function BarberosAdmin() {
                     onClick={() => toggleDisponible(b)}
                     type="button"
                     role="switch"
-                    aria-checked={b.disponible}
+                    aria-checked={estaDisponible(b)}
                     className="flex items-center gap-2 text-sm"
                   >
                     <span
                       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                        b.disponible ? 'bg-primary' : 'bg-slate-300'
+                        estaDisponible(b) ? 'bg-primary' : 'bg-slate-300'
                       }`}
                     >
                       <span
                         className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                          b.disponible ? 'translate-x-4' : 'translate-x-1'
+                          estaDisponible(b) ? 'translate-x-4' : 'translate-x-1'
                         }`}
                       />
                     </span>
-                    <span className={b.disponible ? 'text-navy' : 'text-slate'}>
+                    <span className={estaDisponible(b) ? 'text-navy' : 'text-slate'}>
                       Disponible para Citas
                     </span>
                   </button>
                 </div>
 
-                {/* Barra de progreso de citas de hoy */}
+                {/* Citas de hoy de este barbero. La barra es RELATIVA: se
+                    escala con el barbero más ocupado del día (no hay un
+                    máximo fijo porque el salón no define slots). */}
                 <div className="mb-4">
                   <div className="mb-1 flex items-center justify-between text-xs text-slate">
                     <span>Citas para hoy</span>
                     <span className="font-medium text-navy">
-                      {citasHoy_b} de {CAPACIDAD_SLOTS_ESTIMADA} slots
+                      {citasHoy_b} {citasHoy_b === 1 ? 'cita' : 'citas'}
                     </span>
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
                     <div
                       className="h-full rounded-full bg-primary"
-                      style={{ width: `${Math.min((citasHoy_b / CAPACIDAD_SLOTS_ESTIMADA) * 100, 100)}%` }}
+                      style={{ width: `${Math.min((citasHoy_b / maxCitasPorBarbero) * 100, 100)}%` }}
                     />
                   </div>
                 </div>

@@ -12,7 +12,7 @@ import { useLocation } from 'react-router-dom'
 import Hero from '../../src/components/Hero'
 import { renderWithProviders } from '../helpers/renderWithProviders'
 
-vi.mock('../../src/context/AuthContext', async (importOriginal) => {
+vi.mock('../../src/context/useAuth', async (importOriginal) => {
   const real = await importOriginal()
   const { authSimulado } = await import('../helpers/renderWithProviders')
   return { ...real, useAuth: () => authSimulado.valor }

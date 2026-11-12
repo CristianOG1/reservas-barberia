@@ -1,13 +1,15 @@
-// src/context/AuthContext.jsx
+// src/context/AuthProvider.jsx
 // Sesión + ROL + barbería del usuario. El rol y la barbería se leen de la tabla
 // `perfiles`, NO de `auth.users.user_metadata`: ese campo lo escribe el propio
 // cliente al registrarse, así que cualquiera podría pedir 'admin'. La tabla
 // `perfiles` la escribe solo el trigger de la BD y no tiene política de
 // escritura desde la app.
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+//
+// El objeto Context vive en `auth.js` y el hook en `useAuth.js` (ver la nota de
+// esos archivos).
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
-
-const AuthContext = createContext()
+import { AuthContext } from './auth'
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
@@ -86,5 +88,3 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   )
 }
-
-export const useAuth = () => useContext(AuthContext)

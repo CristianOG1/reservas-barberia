@@ -6,6 +6,8 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { supabaseMock } from '../mocks/supabaseClient'
 import {
   esperarFila,
   dentroDeLaFila,
@@ -109,17 +111,27 @@ describe('CitasAdmin · agenda', () => {
     })
   })
 
-  it.fails('F-08 · avisa cuando la carga de las citas falla', async () => {
-    // HUECO REAL: `cargarDatos` no revisa el `error` de la consulta, hace
-    // `setCitas(citasRes.data || [])` y un fallo de red se ve EXACTAMENTE
-    // igual que un día sin citas. Es el patrón «A. Lecturas — el error se
-    // descarta» de AGENTS.md §13, que este panel aún no corrige.
+  it('F-08 · avisa cuando la carga de las citas falla y ofrece reintentar', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     montarCitasAdmin({ datos: { errorCitas: { message: 'sin permiso' } } })
 
     await waitFor(() => {
-      expect(screen.getByText(/No hay citas agendadas/)).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'No pudimos cargar las citas. Intenta de nuevo.'
+      )
     })
-    expect(screen.getByRole('alert')).toBeInTheDocument()
+    // Un fallo de red NO se ve como un día sin citas.
+    expect(screen.queryByText(/No hay citas agendadas/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await waitFor(() => {
+      expect(
+        supabaseMock.llamadas.filter(
+          (c) => c.tipo === 'query' && c.tabla === 'citas' && c.operacion === 'select'
+        ).length
+      ).toBeGreaterThanOrEqual(2)
+    })
   })
 
   it('el panel muestra «Cargando...» mientras llegan los datos', async () => {

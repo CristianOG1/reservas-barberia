@@ -12,6 +12,7 @@
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { SLUG_MAX, SLUG_MIN, motivoSlugInvalido, slugDeNombre } from '../../utils/slug'
+import { dominioBase } from '../../utils/dominio'
 
 const PASSWORD_MIN = 8
 const REGEX_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -40,6 +41,10 @@ async function mensajeDeLaFuncion(error) {
 
 export default function BarberiaForm({ barberia, onClose, onGuardado }) {
   const esEdicion = !!barberia
+  // El dominio base del software. Es una VARIABLE DE COMPILACIÓN
+  // (`VITE_DOMINIO_BASE`), como en `BarberiasSuper`: el texto de ayuda del slug
+  // tiene que enseñar el dominio de verdad, no uno escrito a mano.
+  const dominio = dominioBase()
 
   const [form, setForm] = useState({
     nombre: barberia?.nombre || '',
@@ -189,7 +194,9 @@ export default function BarberiaForm({ barberia, onClose, onGuardado }) {
           <p id="barberia-slug-ayuda" className="mt-1 text-xs text-slate">
             {esEdicion
               ? 'El slug no se puede cambiar porque es parte de la dirección.'
-              : `Será la dirección del sitio: https://<slug>.tusoftware.com. Solo minúsculas, números y guiones (${SLUG_MIN}–${SLUG_MAX} caracteres).`}
+              : `${dominio
+                  ? `Será la dirección del sitio: https://<slug>.${dominio}.`
+                  : 'Será la dirección del sitio: https://<slug>.<dominio del software>.'} Solo minúsculas, números y guiones (${SLUG_MIN}–${SLUG_MAX} caracteres).`}
           </p>
         </div>
 

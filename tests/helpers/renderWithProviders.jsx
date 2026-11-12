@@ -3,7 +3,7 @@
 // contextos de la app.
 //
 // Cubre tres contextos:
-//   - AuthContext    -> NO se exporta desde `src/context/AuthContext.jsx`, asi
+//   - AuthContext    -> NO se exporta desde `src/context/AuthProvider.jsx`, asi
 //                        que no se puede inyectar con un Provider. El archivo
 //                        de prueba lo sustituye con un mock del modulo (ver
 //                        `authSimulado` mas abajo).
@@ -14,7 +14,7 @@
 //
 //   import { authSimulado, renderWithProviders } from '../helpers/renderWithProviders'
 //
-//   vi.mock('../../src/context/AuthContext', async (importOriginal) => {
+//   vi.mock('../../src/context/useAuth', async (importOriginal) => {
 //     const real = await importOriginal()
 //     const { authSimulado } = await import('../helpers/renderWithProviders')
 //     return { ...real, useAuth: () => authSimulado.valor }

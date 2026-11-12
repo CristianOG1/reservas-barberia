@@ -107,23 +107,31 @@ describe('CitaManualForm', () => {
     expect(guardada).not.toHaveBeenCalled()
   })
 
-  it.fails('F-08 · avisa con un mensaje cuando falta un campo obligatorio', async () => {
-    // HUECO REAL: el modal solo marca `required` en los inputs. No hay ningun
-    // mensaje de error propio: el navegador valida, pero la aplicacion no dice
-    // nada. El unico texto de error del modal es el generico de fallo.
+  it('F-08 · avisa por campo cuando falta un campo obligatorio', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    montarCitaManual()
+    const guardada = vi.fn()
+    montarCitaManual({ onGuardado: guardada })
 
     await user.type(screen.getByLabelText('Nombre del cliente *'), 'Cliente Manual')
     await user.click(screen.getByRole('button', { name: 'Crear cita' }))
 
-    expect(screen.getByRole('alert')).toHaveTextContent(/obligatorio|requerido|falta/i)
+    // Un aviso POR CAMPO, bajo el campo que falta.
+    expect(
+      await screen.findByText('Escribe el teléfono del cliente.')
+    ).toBeInTheDocument()
+    expect(screen.getByText('Elige un servicio del catálogo.')).toBeInTheDocument()
+    expect(screen.getByText('Elige la fecha de la cita.')).toBeInTheDocument()
+    expect(screen.getByText('Elige la hora de la cita.')).toBeInTheDocument()
+    // El campo se marca como inválido para el lector de pantalla.
+    expect(screen.getByLabelText('Teléfono (WhatsApp) *')).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    )
+    // No se guarda nada.
+    expect(guardada).not.toHaveBeenCalled()
   })
 
-  it.fails('F-08 · no deja crear una cita con un telefono de formato invalido', async () => {
-    // HUECO REAL: el campo `telefono` solo tiene `required`. No hay ninguna
-    // validacion de formato, asi que un numero de 3 digitos se guarda y la
-    // cita queda con un telefono inservible para WhatsApp.
+  it('F-08 · no deja crear una cita con un teléfono de formato inválido', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const guardada = vi.fn()
     montarCitaManual({ onGuardado: guardada })
@@ -131,6 +139,14 @@ describe('CitaManualForm', () => {
     await rellenar(user, { telefono: '123' })
     await user.click(screen.getByRole('button', { name: 'Crear cita' }))
 
+    // El aviso explica cuántos dígitos se esperan.
+    expect(await screen.findByText(/3 dígitos/)).toBeInTheDocument()
+    // No se guarda nada: la cita no quedaría con un teléfono inservible.
     expect(guardada).not.toHaveBeenCalled()
+    expect(
+      supabaseMock.llamadas.find(
+        (c) => c.tipo === 'query' && c.tabla === 'citas' && c.operacion === 'insert'
+      )
+    ).toBeUndefined()
   })
 })

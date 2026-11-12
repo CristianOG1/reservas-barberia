@@ -107,7 +107,10 @@ describe('ServicioForm · edición', () => {
       duracion: '30',
       imagen: 'https://ejemplo.com/foto.png',
     })
-    expect(llamada.filtros).toEqual([{ op: 'eq', columna: 'id', valor: 's1' }])
+    expect(llamada.filtros).toEqual([
+      { op: 'eq', columna: 'id', valor: 's1' },
+      { op: 'eq', columna: 'barberia_id', valor: 'b1' },
+    ])
   })
 
   it('F-09 · sin imagen nueva se conserva la que ya tenía, sin volver a subirla', async () => {
@@ -175,12 +178,10 @@ describe('ServicioForm · detalle', () => {
 })
 
 describe('ServicioForm · huecos', () => {
-  it.fails('F-09 · la edición acota la escritura a la barbería', async () => {
-    // HUECO REAL: el alta mete `barberia_id` en el insert y el listado borra
-    // con `.eq('id').eq('barberia_id')`, pero la EDICION solo filtra por
-    // `.eq('id')`. La RLS lo impide de todos modos (politica `Admin escribe`,
-    // AGENTS.md §10.5), asi que no es una fuga de datos: es que la consulta no
-    // lleva el mismo acotado que el resto de escrituras del panel.
+  it('F-09 · la edición acota la escritura a la barbería', async () => {
+    // Defensa en profundidad: el alta mete `barberia_id` en el insert y el
+    // listado borra con `.eq(`id`).eq(`barberia_id`)`; ahora la EDICIÓN también
+    // lleva el acotado. La RLS ya lo impedía (AGENTS.md §10.5).
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     montarServicioForm({ servicio: SERVICIOS[0] })
 

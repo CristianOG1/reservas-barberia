@@ -25,7 +25,7 @@ export default defineConfig([
     // necesitan `process` y el resto de variables de Node. El resto (describe,
     // it, expect, vi) se importan de 'vitest' en cada archivo, asi que no hace
     // falta declararlas como globales.
-    files: ['tests/**/*.{js,jsx}', 'vitest.config.js', 'vitest.integration.config.js'],
+    files: ['tests/**/*.{js,jsx}', 'vitest.config.js', 'vitest.integration.config.js', 'vitest.rendimiento.config.js'],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser },
     },

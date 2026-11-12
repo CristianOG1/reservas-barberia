@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useBarberia } from '../context/useBarberia'
@@ -14,11 +14,7 @@ export default function Productos() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(false)
 
-  useEffect(() => {
-    if (barberiaId) cargarProductos()
-  }, [barberiaId])
-
-  const cargarProductos = async () => {
+  const cargarProductos = useCallback(async () => {
     setCargando(true)
     setError(false)
 
@@ -36,7 +32,16 @@ export default function Productos() {
       setProductos(data || [])
     }
     setCargando(false)
-  }
+  }, [barberiaId])
+
+  useEffect(() => {
+    if (barberiaId) {
+      // La carga se dispara FUERA del cuerpo síncrono del efecto: dentro de
+      // un efecto, un `setState` síncrono provoca renders en cascada (regla
+      // `react-hooks/set-state-in-effect`).
+      Promise.resolve().then(cargarProductos)
+    }
+  }, [barberiaId, cargarProductos])
 
   return (
     <section id="productos" className="px-8 py-16 scroll-mt-4">

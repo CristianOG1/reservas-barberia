@@ -18,7 +18,7 @@ import LoginPage from '../../src/pages/LoginPage'
 import { renderWithProviders, authSimulado } from '../helpers/renderWithProviders'
 import { supabaseMock } from '../mocks/supabaseClient'
 
-vi.mock('../../src/context/AuthContext', async (importOriginal) => {
+vi.mock('../../src/context/useAuth', async (importOriginal) => {
   const real = await importOriginal()
   const { authSimulado } = await import('../helpers/renderWithProviders')
   return { ...real, useAuth: () => authSimulado.valor }

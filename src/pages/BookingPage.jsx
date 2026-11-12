@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/useAuth'
 import { useBarberia } from '../context/useBarberia'
 import { supabase } from '../supabaseClient'
 import { borrarBorrador, guardarBorrador, leerBorrador } from '../utils/borrador'
 import { FechaISO, formato12h, lunesDe, minutosDeHora } from '../utils/fecha'
 import { duracionAMinutos, formatoDuracion } from '../utils/formato'
+import { validarObligatorios, validarTelefono } from '../utils/validaciones'
 
 const PASOS = ['Servicio', 'Fecha & Hora', 'Tus Datos']
 
@@ -62,6 +63,10 @@ export default function BookingPage() {
 
   const [form, setForm] = useState(borrador?.form ?? { nombre: '', telefono: '', correo: '', notas: '' })
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value })
+
+  // Aviso por campo de los datos del titular (paso 3). Se vacía en cuanto se
+  // vuelve a confirmar: el mensaje va con el dato que falta.
+  const [erroresCampos, setErroresCampos] = useState({})
 
   const [estadoEnvio, setEstadoEnvio] = useState('idle') // idle | enviando | error | slot | exito
 
@@ -288,10 +293,39 @@ export default function BookingPage() {
     return true
   }
 
+  /* ---- Validación de los datos del titular (paso 3) ----
+     Los campos del paso 3 NO están dentro de un `<form>`: el `required` del
+     navegador no se aplica, así que se validan aquí y se avisa **por campo**.
+     La regla del teléfono es la de `validarTelefono`, que reutiliza la de
+     `telefonoParaWhatsApp`: si el número no sirve para un WhatsApp, no
+     sirve para una cita. */
+  const validarDatosCliente = () => {
+    const errores = validarObligatorios(form, {
+      nombre: 'Escribe tu nombre completo.',
+      telefono: 'Escribe tu teléfono para confirmar la cita.',
+      correo: 'Escribe tu correo para recibir la confirmación.',
+    })
+    const problemaTelefono = String(form.telefono ?? '').trim()
+      ? validarTelefono(form.telefono)
+      : null
+    if (problemaTelefono) errores.telefono = problemaTelefono
+    return errores
+  }
+
   /* ---- Guardado ---- */
   const handleConfirmar = async () => {
     // Seguro extra: aunque el modal esté abierto, sin sesión no se inserta nada.
     if (requiereLogin()) return
+
+    // Red de seguridad: si los datos cambiaron con el panel abierto, se
+    // validan antes de insertar.
+    const errores = validarDatosCliente()
+    if (Object.keys(errores).length > 0) {
+      setErroresCampos(errores)
+      setMostrarResumen(false)
+      setPasoActual(3)
+      return
+    }
 
     setEstadoEnvio('enviando')
 
@@ -725,25 +759,49 @@ export default function BookingPage() {
 
               <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 grid sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-neutral-400 text-xs block mb-2">Nombre Completo *</label>
+                  <label htmlFor="booking-nombre" className="text-neutral-400 text-xs block mb-2">Nombre Completo *</label>
                   <input
+                    id="booking-nombre"
                     name="nombre" value={form.nombre} onChange={handleChange} required
+                    aria-invalid={erroresCampos.nombre ? 'true' : undefined}
+                    aria-describedby={erroresCampos.nombre ? 'error-nombre' : undefined}
                     className="w-full bg-neutral-800 text-white text-sm px-4 py-3 rounded-md outline-none"
                   />
+                  {erroresCampos.nombre && (
+                    <p id="error-nombre" role="alert" className="text-red-400 text-xs mt-1">
+                      {erroresCampos.nombre}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="text-neutral-400 text-xs block mb-2">Teléfono Móvil (WhatsApp) *</label>
+                  <label htmlFor="booking-telefono" className="text-neutral-400 text-xs block mb-2">Teléfono Móvil (WhatsApp) *</label>
                   <input
+                    id="booking-telefono"
                     name="telefono" value={form.telefono} onChange={handleChange} required
+                    aria-invalid={erroresCampos.telefono ? 'true' : undefined}
+                    aria-describedby={erroresCampos.telefono ? 'error-telefono' : undefined}
                     className="w-full bg-neutral-800 text-white text-sm px-4 py-3 rounded-md outline-none"
                   />
+                  {erroresCampos.telefono && (
+                    <p id="error-telefono" role="alert" className="text-red-400 text-xs mt-1">
+                      {erroresCampos.telefono}
+                    </p>
+                  )}
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="text-neutral-400 text-xs block mb-2">Correo Corporativo / Personal *</label>
+                  <label htmlFor="booking-correo" className="text-neutral-400 text-xs block mb-2">Correo Corporativo / Personal *</label>
                   <input
+                    id="booking-correo"
                     type="email" name="correo" value={form.correo} onChange={handleChange} required
+                    aria-invalid={erroresCampos.correo ? 'true' : undefined}
+                    aria-describedby={erroresCampos.correo ? 'error-correo' : undefined}
                     className="w-full bg-neutral-800 text-white text-sm px-4 py-3 rounded-md outline-none"
                   />
+                  {erroresCampos.correo && (
+                    <p id="error-correo" role="alert" className="text-red-400 text-xs mt-1">
+                      {erroresCampos.correo}
+                    </p>
+                  )}
                 </div>
                 <div className="sm:col-span-2">
                   <label className="text-neutral-400 text-xs block mb-2">
@@ -861,8 +919,20 @@ export default function BookingPage() {
                 </p>
 
                 <button
-                    onClick={() => { if (requiereLogin()) return; setEstadoEnvio('idle'); setMostrarResumen(true) }}
-                    disabled={serviciosElegidos.length === 0 || !fechaElegida || !horaElegida || !form.nombre || !form.telefono || !form.correo || estadoEnvio === 'enviando' || cargandoSesion}
+                    onClick={() => {
+                      if (requiereLogin()) return
+                      // Se valida antes de abrir el panel de confirmación: si
+                      // falta un dato, se avisa en el paso 3 y no se inserta.
+                      const errores = validarDatosCliente()
+                      setErroresCampos(errores)
+                      if (Object.keys(errores).length > 0) {
+                        setPasoActual(3)
+                        return
+                      }
+                      setEstadoEnvio('idle')
+                      setMostrarResumen(true)
+                    }}
+                    disabled={serviciosElegidos.length === 0 || !fechaElegida || !horaElegida || estadoEnvio === 'enviando' || cargandoSesion}
                     className="w-full bg-white text-neutral-900 font-semibold py-3 rounded-md mt-5 disabled:opacity-30"
                   >
                     {session || cargandoSesion ? 'CONFIRMAR RESERVACIÓN →' : 'INICIAR SESIÓN PARA RESERVAR →'}

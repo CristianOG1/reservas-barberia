@@ -10,7 +10,7 @@ import userEvent from '@testing-library/user-event'
 import { renderWithProviders, sesionSimulada } from '../helpers/renderWithProviders'
 import SuperadminDashboard from '../../src/pages/superadmin/SuperadminDashboard'
 
-vi.mock('../../src/context/AuthContext', async (importOriginal) => {
+vi.mock('../../src/context/useAuth', async (importOriginal) => {
   const real = await importOriginal()
   const { authSimulado } = await import('../helpers/renderWithProviders')
   return { ...real, useAuth: () => authSimulado.valor }

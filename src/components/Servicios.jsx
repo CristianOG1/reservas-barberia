@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useBarberia } from '../context/useBarberia'
@@ -16,11 +16,7 @@ export default function Servicios() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(false)
 
-  useEffect(() => {
-    if (barberiaId) cargarServicios()
-  }, [barberiaId])
-
-  const cargarServicios = async () => {
+  const cargarServicios = useCallback(async () => {
     setCargando(true)
     setError(false)
 
@@ -38,7 +34,16 @@ export default function Servicios() {
       setServicios(data || [])
     }
     setCargando(false)
-  }
+  }, [barberiaId])
+
+  useEffect(() => {
+    if (barberiaId) {
+      // La carga se dispara FUERA del cuerpo síncrono del efecto: dentro de
+      // un efecto, un `setState` síncrono provoca renders en cascada (regla
+      // `react-hooks/set-state-in-effect`).
+      Promise.resolve().then(cargarServicios)
+    }
+  }, [barberiaId, cargarServicios])
 
   return (
     // id="servicios" es el destino del botón "Explorar servicios" del Hero.

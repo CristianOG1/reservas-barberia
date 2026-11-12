@@ -305,26 +305,38 @@ describe('ServiciosAdmin · abrir el formulario desde la tabla', () => {
   })
 })
 
-describe('ServiciosAdmin · huecos', () => {
-  it.fails('F-09 · avisa cuando la carga de los servicios falla', async () => {
-    // HUECO REAL: `cargarServicios` no revisa el `error`; hace
-    // `setServicios(data || [])` y un fallo de red se ve EXACTAMENTE igual que
-    // un catalogo vacio. Es el patron "A. Lecturas - el error se descarta" de
-    // AGENTS.md §13, que este panel todavia no corrige.
+describe('ServiciosAdmin · errores', () => {
+  it('F-09 · avisa cuando la carga de los servicios falla y ofrece reintentar', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     montarServiciosAdmin({ error: { message: 'sin permiso' } })
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'No pudimos cargar los servicios. Intenta de nuevo.'
+      )
     })
+    // Un fallo de red NO se ve como un catálogo vacío.
     expect(
       screen.queryByText('Aún no hay servicios en el catálogo.')
     ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument()
+
+    // Al reintentar se vuelve a pedir el catálogo.
+    const selects = supabaseMock.llamadas.filter(
+      (c) => c.tipo === 'query' && c.tabla === 'servicios' && c.operacion === 'select'
+    )
+    expect(selects).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await waitFor(() => {
+      expect(
+        supabaseMock.llamadas.filter(
+          (c) => c.tipo === 'query' && c.tabla === 'servicios' && c.operacion === 'select'
+        ).length
+      ).toBeGreaterThanOrEqual(2)
+    })
   })
 
-  it.fails('F-09 · avisa cuando el borrado de un servicio falla', async () => {
-    // HUECO REAL: `handleEliminar` no revisa el `error` del `delete`: la fila
-    // desaparece de la pantalla si el borrado funciono y se queda igual si
-    // fallo, pero nunca se dice que fallo (AGENTS.md §13.D).
+  it('F-09 · avisa cuando el borrado de un servicio falla', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true)
     supabaseMock.on('servicios', 'delete', { data: null, error: { message: 'sin permiso' } })
@@ -334,8 +346,12 @@ describe('ServiciosAdmin · huecos', () => {
     await user.click(screen.getByRole('button', { name: 'Eliminar Corte de cabello' }))
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('sin permiso')
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'No se pudo eliminar el servicio: sin permiso'
+      )
     })
+    // El servicio sigue en la lista: no se finge el borrado.
+    expect(screen.getByText('Corte de cabello')).toBeInTheDocument()
 
     confirmar.mockRestore()
   })

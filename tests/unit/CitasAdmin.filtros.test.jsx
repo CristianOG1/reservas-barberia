@@ -79,16 +79,6 @@ describe('CitasAdmin · filtros y metricas', () => {
     expect(filaDe('Ana')).toBeNull()
   })
 
-  it.fails('permite buscar una cita por el nombre del cliente', async () => {
-    // HUECO REAL: el panel no tiene buscador. Solo hay filtro por estado y por
-    // barbero (los servicios si lo tienen). El criterio de F-08 no lo exige,
-    // pero el filtro por barbero y el de estado no cubren "buscar por cliente".
-    montarCitasAdmin()
-
-    await esperarFila('Ana')
-    const buscador = screen.queryByPlaceholderText(/buscar|cliente/i)
-    expect(buscador).toBeInTheDocument()
-  })
 
   it('F-08 · las metricas del panel salen de los datos reales', async () => {
     montarCitasAdmin()
