@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import BarberiaForm from './BarberiaForm'
+import { dominioBaseDeBarberias } from '../../utils/dominio'
 
 const ITEMS_POR_PAGINA = 8
 
@@ -19,10 +20,6 @@ const ITEMS_POR_PAGINA = 8
    Ahora el dominio base es una variable de compilación (§14.1), igual que en
    `BarberiaProvider`: los dos componentes leen la misma fuente y no pueden
    discrepar. Sin la variable no hay dirección que abrir y el botón se deshabilita. */
-function dominioBaseDeBarberias() {
-  return String(import.meta.env.VITE_DOMINIO_BASE || '').trim().toLowerCase() || null
-}
-
 const DOMINIO_BASE = dominioBaseDeBarberias()
 
 // `created_at` es timestamptz: se muestra en formato corto y en español.

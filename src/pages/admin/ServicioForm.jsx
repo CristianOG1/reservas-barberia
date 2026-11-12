@@ -54,7 +54,7 @@ export default function ServicioForm({ servicio, categorias = [], soloLectura = 
       const payload = { ...form, costo: Number(form.costo), imagen: urlImagen }
 
       const { error } = esEdicion
-        ? await supabase.from('servicios').update(payload).eq('id', servicio.id)
+        ? await supabase.from('servicios').update(payload).eq('id', servicio.id).eq('barberia_id', barberiaId)
         : await supabase.from('servicios').insert([{ ...payload, barberia_id: barberiaId }])
 
       if (error) throw error

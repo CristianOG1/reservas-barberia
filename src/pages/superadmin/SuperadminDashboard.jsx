@@ -10,7 +10,7 @@
 //    admin son controles muertos (§18.9, §9.1).
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 
 // Identidad del panel. Es la del SOFTWARE, no la de una barbería: aquí no hay
 // nombre ni logo que leer. Placeholder pendiente de sustituir por el nombre real

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 import { useBarberia } from '../../context/useBarberia'
 import { supabase } from '../../supabaseClient'
+import { FechaISO, aDate, formatearFecha, formato12h, recortarHora } from '../../utils/fecha'
 
 // Mismos turnos que BookingPage. Horas en 24 h; el AM/PM es solo visual.
 const BLOQUES = [
@@ -16,30 +17,6 @@ const estilosEstado = {
   confirmada: 'bg-green-100 text-green-800',
   completada: 'bg-slate-200 text-slate-700',
   cancelada: 'bg-red-100 text-red-700',
-}
-
-// 'YYYY-MM-DD' en hora local (no usar toISOString: en México daría el día anterior)
-const fechaISO = (d) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-
-const recortarHora = (h) => String(h ?? '').slice(0, 5) // '14:30:00' → '14:30'
-
-function formato12h(hora) {
-  const [h, m] = recortarHora(hora).split(':').map(Number)
-  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
-}
-
-function formatearFecha(fecha) {
-  const [y, m, d] = String(fecha).slice(0, 10).split('-').map(Number)
-  return new Date(y, m - 1, d).toLocaleDateString('es-MX', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  })
-}
-
-function aDate(fecha, hora) {
-  const [y, m, d] = String(fecha).slice(0, 10).split('-').map(Number)
-  const [h, min] = recortarHora(hora).split(':').map(Number)
-  return new Date(y, m - 1, d, h, min)
 }
 
 function Modal({ titulo, onCerrar, children }) {
@@ -86,7 +63,7 @@ export default function CitasCliente() {
 
   // Reloj congelado al montar (igual que en BookingPage): evita `new Date()` impuro en render.
   const [reloj] = useState(() => new Date())
-  const hoy = fechaISO(reloj)
+  const hoy = FechaISO(reloj)
   const ahoraMin = reloj.getHours() * 60 + reloj.getMinutes()
 
   /* ---- Cargar solo las citas del usuario logueado en ESTA barbería ----

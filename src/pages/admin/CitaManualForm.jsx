@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { useBarberia } from '../../context/useBarberia'
+import { validarObligatorios, validarTelefono } from '../../utils/validaciones'
 
 export default function CitaManualForm({ cita, servicios, barberos, onClose, onGuardado }) {
   const esEdicion = !!cita
@@ -26,6 +27,10 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
   })
   const [guardando, setGuardando] = useState(false)
   const [errorMsg, setErrorMsg] = useState(null)
+  // Aviso por campo. El formulario lleva `noValidate` para que el navegador
+  // no bloquee el envío con su propio mensaje (en inglés y sin decir qué
+  // campo): la validación vive aquí y se muestra bajo cada campo.
+  const [erroresCampos, setErroresCampos] = useState({})
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value })
 
@@ -41,10 +46,36 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
     })
   }
 
+  /* ---- Validación de los datos ----
+     La regla del teléfono es la de `validarTelefono`, que reutiliza la de
+     `telefonoParaWhatsApp`: si el número no sirve para un WhatsApp, no
+     sirve para una cita. */
+  const validarDatos = () => {
+    const errores = validarObligatorios(form, {
+      nombre: 'Escribe el nombre del cliente.',
+      telefono: 'Escribe el teléfono del cliente.',
+      servicio: 'Elige un servicio del catálogo.',
+      fecha: 'Elige la fecha de la cita.',
+      hora: 'Elige la hora de la cita.',
+    })
+    const problemaTelefono = String(form.telefono ?? '').trim()
+      ? validarTelefono(form.telefono)
+      : null
+    if (problemaTelefono) errores.telefono = problemaTelefono
+    return errores
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setGuardando(true)
     setErrorMsg(null)
+
+    const errores = validarDatos()
+    setErroresCampos(errores)
+    if (Object.keys(errores).length > 0) {
+      setGuardando(false)
+      return
+    }
 
     try {
       const payload = {
@@ -61,8 +92,10 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
 
       // En alta manual la cita nace 'pendiente' de confirmar, igual que las que
       // crea el flujo público. En edición NO se toca `estado`.
+      // La edición también va acotada por `barberia_id`: es defensa en
+      // profundidad (la RLS ya lo impide, AGENTS.md §10.5).
       const peticion = esEdicion
-        ? supabase.from('citas').update(payload).eq('id', cita.id)
+        ? supabase.from('citas').update(payload).eq('id', cita.id).eq('barberia_id', barberiaId)
         : supabase.from('citas').insert([{ ...payload, estado: 'pendiente', barberia_id: barberiaId }])
 
       const { error } = await peticion
@@ -79,6 +112,7 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <form
         onSubmit={handleSubmit}
+        noValidate
         className="flex max-h-[90vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
       >
         <div>
@@ -100,8 +134,15 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
             onChange={handleChange}
             required
             placeholder="Nombre del cliente"
+            aria-invalid={erroresCampos.nombre ? 'true' : undefined}
+            aria-describedby={erroresCampos.nombre ? 'error-nombre' : undefined}
             className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-navy outline-none placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary-100"
           />
+          {erroresCampos.nombre && (
+            <p id="error-nombre" role="alert" className="mt-1 text-sm text-red-600">
+              {erroresCampos.nombre}
+            </p>
+          )}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -114,8 +155,15 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
               onChange={handleChange}
               required
               placeholder="10 dígitos"
+              aria-invalid={erroresCampos.telefono ? 'true' : undefined}
+              aria-describedby={erroresCampos.telefono ? 'error-telefono' : undefined}
               className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-navy outline-none placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary-100"
             />
+            {erroresCampos.telefono && (
+              <p id="error-telefono" role="alert" className="mt-1 text-sm text-red-600">
+                {erroresCampos.telefono}
+              </p>
+            )}
           </div>
           <div>
             <label htmlFor="correo" className="block text-sm text-slate">Correo</label>
@@ -139,6 +187,8 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
             value={form.servicio}
             onChange={handleServicio}
             required
+            aria-invalid={erroresCampos.servicio ? 'true' : undefined}
+            aria-describedby={erroresCampos.servicio ? 'error-servicio' : undefined}
             className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-navy outline-none focus:border-primary focus:ring-2 focus:ring-primary-100"
           >
             <option value="">Selecciona un servicio del catálogo…</option>
@@ -151,6 +201,11 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
           <p className="mt-1 text-xs text-slate">
             El servicio se guarda como texto. Si falta uno, agrégalo primero en Gestión de Servicios.
           </p>
+          {erroresCampos.servicio && (
+            <p id="error-servicio" role="alert" className="mt-1 text-sm text-red-600">
+              {erroresCampos.servicio}
+            </p>
+          )}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -163,8 +218,15 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
               value={form.fecha}
               onChange={handleChange}
               required
+              aria-invalid={erroresCampos.fecha ? 'true' : undefined}
+              aria-describedby={erroresCampos.fecha ? 'error-fecha' : undefined}
               className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-navy outline-none focus:border-primary focus:ring-2 focus:ring-primary-100"
             />
+            {erroresCampos.fecha && (
+              <p id="error-fecha" role="alert" className="mt-1 text-sm text-red-600">
+                {erroresCampos.fecha}
+              </p>
+            )}
           </div>
           <div>
             <label htmlFor="hora" className="block text-sm text-slate">Hora *</label>
@@ -175,8 +237,15 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
               value={form.hora}
               onChange={handleChange}
               required
+              aria-invalid={erroresCampos.hora ? 'true' : undefined}
+              aria-describedby={erroresCampos.hora ? 'error-hora' : undefined}
               className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-navy outline-none focus:border-primary focus:ring-2 focus:ring-primary-100"
             />
+            {erroresCampos.hora && (
+              <p id="error-hora" role="alert" className="mt-1 text-sm text-red-600">
+                {erroresCampos.hora}
+              </p>
+            )}
           </div>
         </div>
 

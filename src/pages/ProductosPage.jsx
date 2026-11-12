@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { useBarberia } from '../context/useBarberia'
 
@@ -9,31 +9,41 @@ export default function ProductosPage() {
 
   const [productos, setProductos] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos')
   const [busqueda, setBusqueda] = useState('')
   const [orden, setOrden] = useState('nombre')
 
-  useEffect(() => {
-    if (barberiaId) obtenerProductos()
-  }, [barberiaId])
+  const obtenerProductos = useCallback(async () => {
+    setLoading(true)
+    setError(false)
 
-  async function obtenerProductos() {
-    const { data, error } = await supabase
+    const { data, error: errorSupabase } = await supabase
       .from('productos')
       .select('*')
       .eq('barberia_id', barberiaId)
 
-    if (error) {
-      console.error('Error:', error)
+    // Un fallo de red no puede verse como un catálogo sin productos.
+    if (errorSupabase) {
+      console.error(errorSupabase)
+      setError(true)
+      setProductos([])
       setLoading(false)
       return
     }
 
-    console.log(data)
-
-    setProductos(data)
+    setProductos(data || [])
     setLoading(false)
-  }
+  }, [barberiaId])
+
+  useEffect(() => {
+    if (barberiaId) {
+      // La carga se dispara FUERA del cuerpo síncrono del efecto: dentro de
+      // un efecto, un `setState` síncrono provoca renders en cascada (regla
+      // `react-hooks/set-state-in-effect`).
+      Promise.resolve().then(obtenerProductos)
+    }
+  }, [barberiaId, obtenerProductos])
 
   if (loading) {
     return <h2>Cargando productos...</h2>
@@ -65,6 +75,12 @@ const productosOrdenados = [...productosFiltrados].sort((a, b) => {
 
   return a.nombre.localeCompare(b.nombre)
 })
+
+// Las categorías del filtro salen de los productos reales (más «Todos»).
+const categorias = [
+  'Todos',
+  ...[...new Set(productos.map((p) => p.categoria).filter(Boolean))],
+]
 
   return (
     <div className="bg-neutral-950 min-h-screen px-8 py-12">
@@ -121,19 +137,33 @@ const productosOrdenados = [...productosFiltrados].sort((a, b) => {
 
 </div>
 
+    {error ? (
+      // Mismo patrón que la portada: el error sustituye al listado y ofrece
+      // reintentar. Un fallo de red no puede verse como un catálogo vacío.
+      <div className="text-sm">
+        <p role="alert" className="text-neutral-400 mb-3">
+          No pudimos cargar los productos.
+        </p>
+        <button
+          onClick={obtenerProductos}
+          className="text-white border border-neutral-700 hover:border-neutral-500 px-4 py-2 rounded-md transition-colors"
+        >
+          Reintentar
+        </button>
+      </div>
+    ) : null}
+
+    {!error && (
     <p className="text-neutral-400 mb-8">
   Mostrando {productosOrdenados.length} productos
     </p>
+    )}
 
       <div className="flex flex-wrap gap-3 mb-8">
 
-        {[
-          'Todos',
-          'Cabello',
-          'Barba',
-          'Cuidado Personal',
-          'Accesorios'
-        ].map((categoria) => (
+        {/* Las categorías salen de los DATOS: una línea que no exista en el
+            catálogo no se puede filtrar. */}
+        {categorias.map((categoria) => (
 
           <button
             key={categoria}

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth } from '../../context/useAuth'
 import { useConfiguracion } from '../../context/useConfiguracion'
 
 // Íconos del menú móvil. SVG inline: el proyecto no usa librerías de iconos.
@@ -283,21 +283,6 @@ export default function AdminDashboard() {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></svg>
                 Ver sitio web público
               </a>
-              {/* Notificaciones */}
-              <button className="relative rounded-lg border border-slate-200 p-2 text-slate transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" aria-label="Notificaciones">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-600" />
-              </button>
-              {/* Perfil */}
-              {/* <button className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" aria-label="Mi perfil">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-navy text-xs font-semibold text-white">
-                  A
-                </div>
-                <div className="hidden text-left sm:block">
-                  <p className="text-xs font-medium text-navy">admin@kromatik.com</p>
-                  <p className="text-[11px] text-slate">Administrador</p>
-                </div>
-              </button> */}
             </div>
           </div>
         </header>

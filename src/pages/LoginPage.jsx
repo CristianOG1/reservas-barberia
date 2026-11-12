@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/useAuth'
 import { supabase } from '../supabaseClient'
 import { rutaInicioPorRol } from '../utils/rutaInicioPorRol'
 

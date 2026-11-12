@@ -1,30 +1,33 @@
-import { useEffect } from 'react'
+import React, { Suspense, useEffect } from 'react'
 import { Routes, Route, Outlet, Link, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
 import Services from './components/Servicios'
-import BookingPage from './pages/BookingPage'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import ResumenPage from './pages/admin/ResumenPage'
 import ServiciosAdmin from './pages/admin/ServiciosAdmin'
 import ProductosAdmin from './pages/admin/ProductosAdmin'
 import BarberosAdmin from './pages/admin/BarberosAdmin'
-import CitasAdmin from './pages/admin/CitasAdmin'
 import ProtectedRoute from './components/ProtejerRuta'
 import LoginPage from './pages/LoginPage'
 import ConfiguracionAdmin from './pages/admin/ConfiguracionAdmin'
 import { ConfiguracionProvider } from './context/ConfiguracionProvider'
 import { BarberiaProvider } from './context/BarberiaProvider'
 import { useBarberia } from './context/useBarberia'
-import { useAuth } from './context/AuthContext'
+import { useAuth } from './context/useAuth'
 import ProductosPage from './pages/ProductosPage'
 import ContactoPage from './components/Contacto'
 import ServicesPage from './pages/ServicesPage'
 import Productos from './components/Productos'
 import ClienteDashboard from './pages/cliente/ClienteDashboard'
 import CitasCliente from './pages/cliente/CitasCliente'
-import SuperadminDashboard from './pages/superadmin/SuperadminDashboard'
 import BarberiasSuper from './pages/superadmin/BarberiasSuper'
+
+// Carga diferida de las rutas más pesadas: se descargan solo cuando el usuario
+// navega a ellas. El bundle inicial no las incluye.
+const BookingPageLazy = React.lazy(() => import('./pages/BookingPage'))
+const CitasAdminLazy = React.lazy(() => import('./pages/admin/CitasAdmin'))
+const SuperadminDashboardLazy = React.lazy(() => import('./pages/superadmin/SuperadminDashboard'))
 
 // El router es <Routes> plano, no un data router, así que <ScrollRestoration/> de
 // react-router no aplica aquí. Cada navegación pública arranca desde arriba.
@@ -160,10 +163,11 @@ function Contenido() {
   }
 
   return (
-    <Routes>
-      {/* Fuera del layout público: login y el panel, sin Navbar.
-          `roles` en cada zona: el guard manda al inicio propio si el rol no
-          corresponde (cliente en /admin → /cliente, admin en /cliente → /admin). */}
+    <Suspense fallback={<p className="text-slate-500">Cargando...</p>}>
+      <Routes>
+        {/* Fuera del layout público: login y el panel, sin Navbar.
+            `roles` en cada zona: el guard manda al inicio propio si el rol no
+            corresponde (cliente en /admin → /cliente, admin en /cliente → /admin). */}
       <Route path="/login" element={<LoginPage />} />
 
       {/* Zona del superadmin: multi-barbería, sin `ConfiguracionProvider` (esa
@@ -172,7 +176,7 @@ function Contenido() {
         path="/superadmin"
         element={
           <ProtectedRoute roles={['superadmin']}>
-            <SuperadminDashboard />
+            <SuperadminDashboardLazy />
           </ProtectedRoute>
         }
       >
@@ -195,12 +199,12 @@ function Contenido() {
         <Route path="servicios" element={<ServiciosAdmin />} />
         <Route path="productos" element={<ProductosAdmin />} />
         <Route path="barberos" element={<BarberosAdmin />} />
-        <Route path="citas" element={<CitasAdmin />} />
+        <Route path="citas" element={<CitasAdminLazy />} />
         <Route path="configuracion" element={<ConfiguracionAdmin />} />
       </Route>
 
       {/* Agendar sigue fuera del layout: es una pantalla completa, sin navbar. */}
-      <Route path="/agendar" element={<BookingPage />} />
+      <Route path="/agendar" element={<BookingPageLazy />} />
 
       <Route element={<LayoutPublico />}>
         <Route
@@ -231,7 +235,8 @@ function Contenido() {
         <Route index element={<CitasCliente />} />
       </Route>
 
-    </Routes>
+      </Routes>
+    </Suspense>
   )
 }
 

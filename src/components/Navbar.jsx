@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/useAuth'
 import { useBarberia } from '../context/useBarberia'
 import { rutaInicioPorRol } from '../utils/rutaInicioPorRol'
 

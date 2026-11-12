@@ -1,20 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useBarberia } from '../context/useBarberia'
+import { formatoDuracion, formatoPrecio } from '../utils/formato'
 
 // `duracion` es TEXT en la base de datos: puede venir '30' o '50 min'.
-function formatoDuracion(valor) {
-  const s = String(valor ?? '').trim()
-  return /^\d+$/.test(s) ? `${s} min` : s || '—'
-}
-
 // `servicios.costo` es numérico: lo mostramos como $650 MXN.
-function formatoPrecio(valor) {
-  const n = Number(valor)
-  return Number.isFinite(n) ? `$${n.toLocaleString('es-MX')} MXN` : '—'
-}
-
 export default function Servicios() {
   const navigate = useNavigate()
   // El catálogo es de UNA barbería: todo se filtra por su id.
@@ -25,11 +16,7 @@ export default function Servicios() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(false)
 
-  useEffect(() => {
-    if (barberiaId) cargarServicios()
-  }, [barberiaId])
-
-  const cargarServicios = async () => {
+  const cargarServicios = useCallback(async () => {
     setCargando(true)
     setError(false)
 
@@ -47,7 +34,16 @@ export default function Servicios() {
       setServicios(data || [])
     }
     setCargando(false)
-  }
+  }, [barberiaId])
+
+  useEffect(() => {
+    if (barberiaId) {
+      // La carga se dispara FUERA del cuerpo síncrono del efecto: dentro de
+      // un efecto, un `setState` síncrono provoca renders en cascada (regla
+      // `react-hooks/set-state-in-effect`).
+      Promise.resolve().then(cargarServicios)
+    }
+  }, [barberiaId, cargarServicios])
 
   return (
     // id="servicios" es el destino del botón "Explorar servicios" del Hero.
