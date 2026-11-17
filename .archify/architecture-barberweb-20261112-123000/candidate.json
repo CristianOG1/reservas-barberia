@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Arquitectura BarberWeb",
+    "subtitle": "Arquitectura general de la aplicación de barbería",
+    "output": "arquitectura_barberweb.html",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "frontend": { "label": "Frontend", "visible": true },
+        "backend": { "label": "Backend / API", "visible": true },
+        "database": { "label": "Base de datos", "visible": true },
+        "security": { "label": "Seguridad / Auth", "visible": true },
+        "cloud": { "label": "Plataforma / CDN", "visible": true },
+        "external": { "label": "Cliente externo", "visible": true }
+      }
+    },
+    "viewBox": [320, 240]
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [20, 20],
+    "cols": 6,
+    "gapX": 30,
+    "gapY": 30,
+    "cellW": 200,
+    "cellH": 100
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "external",
+      "label": "Browser",
+      "sublabel": "Service Worker · subdominios",
+      "icon": "external",
+      "row": 0,
+      "col": 0
+    },
+    {
+      "id": "frontend",
+      "type": "frontend",
+      "label": "Frontend",
+      "sublabel": "React 19 · Vite 8 · Tailwind v4",
+      "tag": "Cloudflare Pages",
+      "icon": "frontend",
+      "row": 0,
+      "col": 2
+    },
+    {
+      "id": "sdk",
+      "type": "cloud",
+      "label": "SDK",
+      "sublabel": "@supabase/supabase-js",
+      "icon": "cloud",
+      "row": 0,
+      "col": 4
+    },
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "Auth",
+      "sublabel": "GoTrue · JWT",
+      "icon": "security",
+      "row": 1,
+      "col": 0
+    },
+    {
+      "id": "postgrest",
+      "type": "backend",
+      "label": "PostgREST",
+      "sublabel": "API REST automática",
+      "icon": "backend",
+      "row": 1,
+      "col": 2
+    },
+    {
+      "id": "edge_functions",
+      "type": "backend",
+      "label": "Edge Functions",
+      "sublabel": "Deno · crear-barberia",
+      "icon": "backend",
+      "row": 1,
+      "col": 4
+    },
+    {
+      "id": "postgresql",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "17.6 · RLS",
+      "icon": "database",
+      "row": 2,
+      "col": 2
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Cloudflare Pages",
+      "wraps": ["frontend", "sdk"],
+      "pad": 16
+    },
+    {
+      "kind": "region",
+      "label": "Supabase Project",
+      "wraps": ["auth", "postgrest", "postgresql", "edge_functions"],
+      "pad": 16
+    }
+  ],
+  "connections": [
+    {
+      "id": "browser-to-frontend",
+      "from": "browser",
+      "to": "frontend",
+      "label": "Carga assets HTML/JS/CSS",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "frontend-to-auth",
+      "from": "frontend",
+      "to": "auth",
+      "label": "signIn / signUp / getSession / onAuthStateChange",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "frontend-to-postgrest",
+      "from": "frontend",
+      "to": "postgrest",
+      "label": "SELECT / INSERT / UPDATE / DELETE con barberia_id",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "frontend-to-edge",
+      "from": "frontend",
+      "to": "edge_functions",
+      "label": "POST /functions/v1/crear-barberia",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [[620, 135], [700, 135], [700, 320]]
+    },
+    {
+      "id": "auth-to-postgresql",
+      "from": "auth",
+      "to": "postgresql",
+      "label": "auth.users + perfiles",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -60
+    },
+    {
+      "id": "postgrest-to-postgresql",
+      "from": "postgrest",
+      "to": "postgresql",
+      "label": "SQL con RLS (barberia_id)",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "edge-to-postgresql",
+      "from": "edge_functions",
+      "to": "postgresql",
+      "label": "service_role",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -60
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Capa Cliente",
+      "items": ["Service Worker resuelve subdominios", "Browser accede a la SPA sin backend intermedio"]
+    },
+    {
+      "dot": "emerald",
+      "title": "Capa Frontend",
+      "items": ["React 19 + Vite 8 + Tailwind v4", "SDK de Supabase llama a Auth y PostgREST directamente"]
+    },
+    {
+      "dot": "violet",
+      "title": "Capa Backend",
+      "items": ["Supabase Auth (GoTrue)", "PostgREST + PostgreSQL 17.6 con RLS", "Deno Edge Functions"]
+    }
+  ]
+}

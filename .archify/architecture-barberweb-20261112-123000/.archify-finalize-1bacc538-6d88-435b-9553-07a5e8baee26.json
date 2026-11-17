@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "running",
+  "type": "architecture",
+  "quality": "showcase",
+  "startedAt": "2026-11-12T06:19:39.103Z",
+  "specification": {
+    "path": "C:\\Users\\Cristian\\Desktop\\Carpetas\\Escuela\\Universidad\\Ingenieria\\Decimo\\Nora\\barberia\\.archify\\architecture-barberweb-20261112-123000\\candidate.json",
+    "sha256": "7b716090cff8dca9f3a86e145b4320f9f1a4fb71f26d296b29b1d35cf3e55db8",
+    "bytes": 4825
+  },
+  "artifact": {
+    "path": "C:\\Users\\Cristian\\Desktop\\Carpetas\\Escuela\\Universidad\\Ingenieria\\Decimo\\Nora\\barberia\\.archify\\architecture-barberweb-20261112-123000\\arquitectura_barberweb.html"
+  },
+  "stages": {},
+  "browserCheck": {
+    "requested": true,
+    "ran": false
+  },
+  "diagnostics": [],
+  "evidence": {
+    "receipt": "C:\\Users\\Cristian\\Desktop\\Carpetas\\Escuela\\Universidad\\Ingenieria\\Decimo\\Nora\\barberia\\.archify\\architecture-barberweb-20261112-123000\\arquitectura_barberweb.finalize.json",
+    "summaryReceipt": "C:\\Users\\Cristian\\Desktop\\Carpetas\\Escuela\\Universidad\\Ingenieria\\Decimo\\Nora\\barberia\\.archify\\architecture-barberweb-20261112-123000\\arquitectura_barberweb.finalize-summary.json"
+  },
+  "visualReview": "not-requested"
+}

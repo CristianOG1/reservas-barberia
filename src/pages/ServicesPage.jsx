@@ -1,31 +1,3 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { supabase } from '../supabaseClient'
-
-export default function ServicesPage() {
-  const navigate = useNavigate()
-
-  const [servicios, setServicios] = useState([])
-  const [cargando, setCargando] = useState(true)
-
-  useEffect(() => {
-    cargarServicios()
-  }, [])
-
-  const cargarServicios = async () => {
-    setCargando(true)
-
-    const { data, error } = await supabase
-      .from('servicios')
-      .select('*')
-
-       if (error) {
-        setServicios([])
-    } else {
-        setServicios(data || [])
-    }
-    setCargando(false)
-  }
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
