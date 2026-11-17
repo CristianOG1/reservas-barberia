@@ -1,0 +1,113 @@
+================================================================================
+ REPORTE DE LINT - BarberWeb
+ Fecha: 2026-11-11 01:20
+ Comando: pnpm lint   (eslint .)
+================================================================================
+
+--------------------------------------------------------------------------------
+ 1. ESTADO AL EMPEZAR ESTE BLOQUE: 18 problemas (9 errores, 9 avisos)
+--------------------------------------------------------------------------------
+ Los 9 ERRORES (regla, archivo, línea y causa):
+
+  react-hooks/immutability  (8)  "Cannot access variable before it is declared"
+    src/components/Productos.jsx:18
+      El useEffect llama a `cargarProductos()`, que se declara 3 líneas más abajo.
+    src/components/Servicios.jsx:20
+      El useEffect llama a `cargarServicios()`, declarada más abajo.
+    src/pages/ServicesPage.jsx:18
+      El useEffect llama a `cargarServicios()`, declarada más abajo.
+    src/pages/admin/BarberosAdmin.jsx:97
+      El useEffect llama a `cargarDatos()`, declarada más abajo.
+    src/pages/admin/CitasAdmin.jsx:299
+      El useEffect llama a `cargarDatos()`, declarada más abajo.
+    src/pages/admin/ProductosAdmin.jsx:73
+      El useEffect llama a `cargarProductos()`, declarada más abajo.
+    src/pages/admin/ResumenPage.jsx:78
+      El useEffect llama a `cargarDatos()`, declarada más abajo.
+    src/pages/admin/ServiciosAdmin.jsx:116
+      El useEffect llama a `cargarServicios()`, declarada más abajo.
+
+  react-refresh/only-export-components  (1)
+    src/context/AuthContext.jsx:90
+      El archivo exporta dos cosas: el provider (AuthProvider, un componente)
+      y el hook `useAuth`. Fast Refresh solo funciona si un archivo exporta
+      componentes y nada más.
+
+ Los 9 AVISOS (todos react-hooks/exhaustive-deps, "missing dependency"):
+    src/components/Productos.jsx:19          falta `cargarProductos`
+    src/components/Servicios.jsx:21          falta `cargarServicios`
+    src/pages/ProductosPage.jsx:19           falta `obtenerProductos`
+    src/pages/ServicesPage.jsx:19            falta `cargarServicios`
+    src/pages/admin/BarberosAdmin.jsx:98     falta `cargarDatos`
+    src/pages/admin/CitasAdmin.jsx:300       falta `cargarDatos`
+    src/pages/admin/ProductosAdmin.jsx:74    falta `cargarProductos`
+    src/pages/admin/ResumenPage.jsx:79       falta `cargarDatos`
+    src/pages/admin/ServiciosAdmin.jsx:117   falta `cargarServicios`
+
+ Nota: AGENTS.md §15.1 documenta una línea base de 10 errores + 9 avisos; al
+ empezar este bloque ya eran 9 + 9 porque en el bloque anterior
+ `ProductosPage.jsx` dejó de disparar `react-hooks/immutability`.
+
+--------------------------------------------------------------------------------
+ 2. ESTADO AHORA: pnpm lint  ->  exit code 0
+--------------------------------------------------------------------------------
+ Salida de eslint:
+
+pnpm : $ eslint .
+En C:\Users\Cristian\AppData\Local\Temp\barberweb\reporte2.ps1: 6 Carácter: 1
++ pnpm lint *> "$env:TEMP\lint_now.txt"
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ($ eslint .:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+ (ver arriba)
+
+--------------------------------------------------------------------------------
+ 3. QUE SE CAMBIO  (sin eslint-disable y sin tocar eslint.config.js)
+--------------------------------------------------------------------------------
+  A) Los 9 cargadores que el useEffect usaba antes de declararlos:
+     (Productos.jsx, Servicios.jsx, ServicesPage.jsx, ProductosPage.jsx,
+      ServiciosAdmin.jsx, ProductosAdmin.jsx, BarberosAdmin.jsx, CitasAdmin.jsx,
+      ResumenPage.jsx)
+
+     - El cargador se declara ANTES del efecto y se envuelve en `useCallback`
+       con `[barberiaId]`: su identidad solo cambia cuando cambia la
+       barbería, así que el efecto se dispara exactamente cuando se disparaba
+       antes. Sin cambio de comportamiento.
+     - El efecto dispara la carga FUERA de su cuerpo síncrono:
+         Promise.resolve().then(cargarX)
+       Motivo: al mover el cargador delante del efecto, la regla
+       `react-hooks/immutability` desaparece, pero aparece
+       `react-hooks/set-state-in-effect`, que marca CUALQUIER `setState`
+       alcanzable desde el cuerpo del efecto (aunque la función sea asíncrona
+       y el setState ocurra después del await). Descargar la carga en una
+       microtarea deja el setState fuera del efecto y la regla queda
+       satisfecha sin desactivar nada.
+     - Efecto colateral: con el cargador en las dependencias del efecto se
+       van también los 9 avisos de `react-hooks/exhaustive-deps`.
+
+  B) src/context/AuthContext.jsx  (react-refresh/only-export-components)
+     Partido en tres archivos, con el MISMO patrón que ya usan el contexto
+     de configuración y el de la barbería:
+       src/context/auth.js         ->  el objeto Context
+       src/context/AuthProvider.jsx ->  el provider (antes AuthContext.jsx)
+       src/context/useAuth.js      ->  el hook
+     Se actualizaron los 11 imports de `useAuth` en src/ y los 8 de tests/,
+     y el mock de módulo de los tests pasa a `src/context/useAuth`.
+     El provider y el hook se comportan igual que antes (el hook sigue
+     devolviendo `undefined` si no hay provider: no se le añadió un throw).
+
+--------------------------------------------------------------------------------
+ 4. VERIFICACION
+--------------------------------------------------------------------------------
+ pnpm test   (exit code 0)
+ Test Files  40 passed (40)
+      Tests  417 passed | 9 expected fail (426)
+   Duration  25.15s (environment 52%, tests 27%, setup 15%, import 4%, worker 1%)
+
+ pnpm build  (exit code 0)
+✓ 113 modules transformed.
+dist/assets/index-BJtiwl8f.css   41.86 kB │ gzip:   8.12 kB
+dist/assets/index-Nm_2P64N.js   718.89 kB │ gzip: 184.58 kB
+[32m✓ built in 412ms[39m
+

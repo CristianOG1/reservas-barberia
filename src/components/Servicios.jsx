@@ -1,172 +1,127 @@
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { supabase } from '../supabaseClient'
+import { useBarberia } from '../context/useBarberia'
+import { formatoDuracion, formatoPrecio } from '../utils/formato'
 
-import { useNavigate } from 'react-router-dom'
-
-const servicios = [
-  {
-    numero: '01',
-    categoria: 'CORTES',
-    badge: 'Signature',
-    titulo: 'Corte',
-    descripcion: 'Lorem ipsum dolor sit, amet consectetur adipisicing elit. Hic culpa fugiat assumenda.',
-    duracion: '00 min',
-    tarifa: '$650 MXN',
-    destacado: false,
-    imagen: '/corte-cabello.png',
-  },
-  {
-    numero: '02',
-    categoria: 'BARBAS',
-    badge: 'Tradición',
-    titulo: 'Barba',
-    descripcion: 'Lorem ipsum dolor sit, amet consectetur adipisicing elit. Hic culpa fugiat assumenda.',
-    duracion: '00 min',
-    tarifa: '$550 MXN',
-    destacado: false,
-    imagen: '/arreglo-barba.png',
-  },
-  {
-    numero: '03',
-    categoria: 'COMPLETO',
-    badge: 'Más solicitado',
-    titulo: 'Experiencia',
-    descripcion: 'Lorem ipsum dolor sit, amet consectetur adipisicing elit. Hic culpa fugiat assumenda.',
-    duracion: '00 min',
-    tarifa: '$1,100 MXN',
-    destacado: true,
-    imagen: '/corte-y-barba.png',
-  },
-  {
-    numero: '04',
-    categoria: 'Cortes',
-    badge: 'Bienestar',
-    titulo: 'Definicion',
-    descripcion: 'Lorem ipsum dolor sit, amet consectetur adipisicing elit. Hic culpa fugiat assumenda.',
-    duracion: '00 min',
-    tarifa: '$480 MXN',
-    destacado: false,
-    imagen: '/definición.png',
-  },
-]
-
+// `duracion` es TEXT en la base de datos: puede venir '30' o '50 min'.
+// `servicios.costo` es numérico: lo mostramos como $650 MXN.
 export default function Servicios() {
   const navigate = useNavigate()
+  // El catálogo es de UNA barbería: todo se filtra por su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
+
+  const [servicios, setServicios] = useState([])
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState(false)
+
+  const cargarServicios = useCallback(async () => {
+    setCargando(true)
+    setError(false)
+
+    const { data, error: errorSupabase } = await supabase
+      .from('servicios')
+      .select('*')
+      .eq('barberia_id', barberiaId)
+      .order('created_at', { ascending: true })
+
+    if (errorSupabase) {
+      console.error(errorSupabase)
+      setError(true)
+      setServicios([])
+    } else {
+      setServicios(data || [])
+    }
+    setCargando(false)
+  }, [barberiaId])
+
+  useEffect(() => {
+    if (barberiaId) {
+      // La carga se dispara FUERA del cuerpo síncrono del efecto: dentro de
+      // un efecto, un `setState` síncrono provoca renders en cascada (regla
+      // `react-hooks/set-state-in-effect`).
+      Promise.resolve().then(cargarServicios)
+    }
+  }, [barberiaId, cargarServicios])
 
   return (
-    <section className="px-8 py-16">
+    // id="servicios" es el destino del botón "Explorar servicios" del Hero.
+    <section id="servicios" className="px-8 py-16 scroll-mt-4">
       {/* Encabezado */}
       <div className="grid md:grid-cols-2 gap-8 mb-12">
         <div>
           <div className="flex items-center gap-2 mb-3">
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span className="text-neutral-400 text-xs tracking-wide">
-              SERVICIOS DISTINTIVOS
-            </span>
+            <span className="text-neutral-400 text-xs tracking-wide">SERVICIOS DISTINTIVOS</span>
           </div>
-
           <h2 className="text-3xl font-bold text-white">
             Experiencias en cortes de Cabello y Barba
           </h2>
         </div>
-
         <p className="text-neutral-400 text-sm self-end">
-          Lorem ipsum dolor sit, amet consectetur adipisicing elit.
-          Hic culpa fugiat assumenda. Quis dicta autem doloremque
-          adipisci distinctio natus minima aliquid debitis!
-          Ipsa illo ab, dolores in deleniti ex veritatis?
+          Elige tu servicio, revisa cuánto dura y cuánto cuesta, y agenda tu cita en un par de pasos.
         </p>
       </div>
 
-      {/* Grid de tarjetas */}
-      <div className="grid md:grid-cols-4 gap-4">
-        {servicios.map((s) => (
-          <div
-            key={s.numero}
-            onClick={() =>
-              navigate(
-                `/agendar?servicio=${encodeURIComponent(s.titulo)}`
-              )
-            }
-            className={`rounded-xl p-5 border-3 cursor-pointer transition-transform duration-200 hover:-translate-y-1 ${
-              s.destacado
-                ? 'bg-neutral-900 border-yellow-950'
-                : 'bg-neutral-900 border-neutral-800'
-            }`}
+      {/* Estados: cargando / error / vacío / lista */}
+      {cargando ? (
+        <p className="text-neutral-400 text-sm">Cargando servicios...</p>
+      ) : error ? (
+        <div className="text-sm">
+          <p className="text-neutral-400 mb-3">No pudimos cargar los servicios.</p>
+          <button
+            onClick={cargarServicios}
+            className="text-white border border-neutral-700 hover:border-neutral-500 px-4 py-2 rounded-md transition-colors"
           >
-            {/* Número, categoría y badge */}
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-neutral-500 text-xs">
-                {s.numero} / {s.categoria}
-              </span>
-
-              <span
-                className={`text-xs px-2 py-1 rounded-full ${
-                  s.destacado
-                    ? 'bg-yellow-700 text-white'
-                    : 'bg-neutral-800 text-neutral-300'
-                }`}
-              >
-                {s.badge}
-              </span>
-            </div>
-
-            {/* Imagen del servicio */}
-            <div className="mb-4 overflow-hidden rounded-lg">
-              <img
-                src={s.imagen}
-                alt={`Servicio de ${s.titulo}`}
-                className="w-full h-44 object-cover"
-                loading="lazy"
-              />
-            </div>
-
-            {/* Nombre y descripción */}
-            <h3 className="text-white font-semibold mb-2">
-              {s.titulo}
-            </h3>
-
-            <p className="text-neutral-400 text-sm mb-6">
-              {s.descripcion}
-            </p>
-
-            {/* Duración y tarifa */}
-            <div className="flex justify-between items-end border-t border-neutral-800 pt-4">
-              <div>
-                <p className="text-neutral-500 text-[10px]">
-                  DURACIÓN
-                </p>
-                <p className="text-white text-sm">
-                  {s.duracion}
-                </p>
+            Reintentar
+          </button>
+        </div>
+      ) : servicios.length === 0 ? (
+        <p className="text-neutral-400 text-sm">Pronto publicaremos nuestros servicios.</p>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {servicios.map((s, i) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => navigate(`/agendar?servicio=${encodeURIComponent(s.nombre)}`)}
+              className="text-left rounded-xl p-5 border border-neutral-800 bg-neutral-900 hover:border-amber-400/60 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
+            >
+              {/* Fila superior: número / categoría */}
+              <div className="mb-4">
+                <span className="text-neutral-500 text-xs">
+                  {String(i + 1).padStart(2, '0')}
+                  {s.categoria ? ` / ${s.categoria}` : ''}
+                </span>
               </div>
 
-              <div className="text-right">
-                <p className="text-neutral-500 text-[10px]">
-                  TARIFA
-                </p>
+              <h3 className="text-white font-semibold mb-2">{s.nombre}</h3>
+              <p className="text-neutral-400 text-sm mb-6">
+                {s.descripcion || 'Sin descripción disponible.'}
+              </p>
 
-                <p
-                  className={`text-sm font-semibold ${
-                    s.destacado
-                      ? 'text-yellow-600'
-                      : 'text-white'
-                  }`}
-                >
-                  {s.tarifa}
-                </p>
+              {/* Fila inferior: duración / precio */}
+              <div className="flex justify-between items-end border-t border-neutral-800 pt-4">
+                <div>
+                  <p className="text-neutral-500 text-[10px]">DURACIÓN</p>
+                  <p className="text-white text-sm">{formatoDuracion(s.duracion)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-neutral-500 text-[10px]">PRECIO</p>
+                  <p className="text-amber-400 text-sm font-semibold">{formatoPrecio(s.costo)}</p>
+                </div>
               </div>
-            </div>
-          </div>
-        ))}
-      </div>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Link inferior */}
       <div className="text-right mt-8">
-        <a
-          href="#"
-          className="text-white text-sm font-semibold"
-        >
+        <Link to="/servicios" className="text-white text-sm font-semibold hover:text-amber-400 transition-colors">
           VER TODOS LOS SERVICIOS →
-        </a>
+        </Link>
       </div>
     </section>
   )

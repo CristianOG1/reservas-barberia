@@ -26,6 +26,50 @@ export default function ServicesPage() {
     }
     setCargando(false)
   }
+import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { supabase } from '../supabaseClient'
+import { useBarberia } from '../context/useBarberia'
+import { formatoDuracion } from '../utils/formato'
+
+export default function ServicesPage() {
+  const navigate = useNavigate()
+  // El catálogo es de UNA barbería: todo se filtra por su id.
+  const { barberia } = useBarberia()
+  const barberiaId = barberia?.id ?? null
+
+  const [servicios, setServicios] = useState([])
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState(false)
+
+  const cargarServicios = useCallback(async () => {
+    setCargando(true)
+    setError(false)
+
+    const { data, error: errorSupabase } = await supabase
+      .from('servicios')
+      .select('*')
+      .eq('barberia_id', barberiaId)
+
+    // Un fallo de red no puede verse como una barbería sin servicios.
+    if (errorSupabase) {
+      console.error(errorSupabase)
+      setError(true)
+      setServicios([])
+    } else {
+      setServicios(data || [])
+    }
+    setCargando(false)
+  }, [barberiaId])
+
+  useEffect(() => {
+    if (barberiaId) {
+      // La carga se dispara FUERA del cuerpo síncrono del efecto: dentro de
+      // un efecto, un `setState` síncrono provoca renders en cascada (regla
+      // `react-hooks/set-state-in-effect`).
+      Promise.resolve().then(cargarServicios)
+    }
+  }, [barberiaId, cargarServicios])
 
   return (
     <div className="bg-neutral-950 min-h-screen text-white">
@@ -60,6 +104,21 @@ export default function ServicesPage() {
           <p className="text-neutral-400">
             Cargando servicios...
           </p>
+        ) : error ? (
+          // Mismo patrón que la portada: el error sustituye al listado y ofrece
+          // reintentar. Un fallo de red no puede verse como una barbería sin
+          // servicios.
+          <div className="text-sm">
+            <p role="alert" className="text-neutral-400 mb-3">
+              No pudimos cargar los servicios.
+            </p>
+            <button
+              onClick={cargarServicios}
+              className="text-white border border-neutral-700 hover:border-neutral-500 px-4 py-2 rounded-md transition-colors"
+            >
+              Reintentar
+            </button>
+          </div>
         ) : servicios.length === 0 ? (
           <p className="text-neutral-400">
             No hay servicios registrados.
@@ -109,6 +168,7 @@ export default function ServicesPage() {
 
                       <p className="text-white text-sm mt-1">
                         {servicio.duracion}
+                        {formatoDuracion(servicio.duracion)}
                       </p>
                     </div>
 
