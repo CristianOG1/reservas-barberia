@@ -1,8 +1,4 @@
-// tests/unit/BarberoForm.test.jsx
-// Modal de alta y edicion de un barbero.
-//
-// Matriz v3: F-11 «Gestionar los barberos». La ficha de cada uno (alta, edicion, baja y
-// disponibilidad)».
+// Modal de alta y edición de un barbero (F-11: alta, edición, baja y disponibilidad).
 
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
@@ -18,7 +14,6 @@ import {
 
 usarRelojFijo()
 
-/** Rellena el formulario con los datos de un barbero nuevo. */
 async function rellenar(user, { nombre = 'Barbero Nuevo', especialidad = 'Fade' } = {}) {
   await user.type(screen.getByLabelText('Nombre *'), nombre)
   await user.type(screen.getByLabelText('Especialidad'), especialidad)
@@ -162,9 +157,7 @@ describe('BarberoForm · edición', () => {
 
 describe('BarberoForm · huecos', () => {
   it('F-11 · la edición acota la escritura a la barbería', async () => {
-    // Defensa en profundidad: el alta mete `barberia_id` en el insert y el
-    // listado borra con `.eq(`id`).eq(`barberia_id`)`; ahora la EDICIÓN también
-    // lleva el acotado. La RLS ya lo impedía (AGENTS.md §10.5).
+    // Defensa en profundidad: alta, borrado y edición acotan por barbería; la RLS ya lo impedía (§10.5).
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     montarBarberoForm({ barbero: BARBEROS[0] })
 

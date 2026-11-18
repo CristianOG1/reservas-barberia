@@ -1,26 +1,6 @@
-// tests/mocks/supabaseClient.js
-// Mock manual de `src/supabaseClient.js`.
-//
-// Reproduce la API encadenable de @supabase/supabase-js v2 con builders que
-// son "thenable": cada llamada devuelve un objeto con los mismos metodos, y al
-// hacer `await` se resuelve con la respuesta configurada por el test.
-//
-// Uso desde un test:
-//
-//   import { supabaseMock } from '../mocks/supabaseClient'
-//
-//   supabaseMock.on('citas', 'select', { data: [{ id: 'c1' }] })
-//   const { data } = await supabaseMock.from('citas').select('*').eq('id', 'c1')
-//
-//   supabaseMock.onRpc('cancelar_cita', { data: null, error: null })
-//   const { error } = await supabaseMock.rpc('cancelar_cita', { p_id: 'c1' })
-//
-// Una respuesta puede ser un objeto o una funcion que recibe el contexto de la
-// consulta (tabla, operacion, filtros, carga) y devuelve la respuesta.
-//
-// El mock se registra globalmente en tests/setup.js, de modo que el objeto
-// `supabase` que importa la aplicacion es ESTE mismo: no hace falta
-// `vi.mock` en cada test.
+// Mock manual de src/supabaseClient.js: builders encadenables y thenables (el `await` resuelve
+// la respuesta configurada, que puede ser una función que recibe el contexto de la consulta).
+// Registrado en tests/setup.js: la app importa ESTE objeto, sin vi.mock en cada test.
 
 const RESPUESTA_VACIA = { data: [], error: null, count: null }
 const RESPUESTA_NULA = { data: null, error: null, count: null }
@@ -39,10 +19,8 @@ class Consulta {
     this.unico = null
   }
 
-  // --- seleccion ---
   select(columnas) { this.columnas = columnas; return this }
 
-  // --- escritura ---
   insert(filas) { this.operacion = 'insert'; this.carga = filas; return this }
   update(valores) { this.operacion = 'update'; this.carga = valores; return this }
   upsert(valores, opciones) {
@@ -53,7 +31,6 @@ class Consulta {
   }
   delete() { this.operacion = 'delete'; return this }
 
-  // --- filtros ---
   eq(columna, valor) { return this._filtro('eq', columna, valor) }
   neq(columna, valor) { return this._filtro('neq', columna, valor) }
   gt(columna, valor) { return this._filtro('gt', columna, valor) }
@@ -69,16 +46,13 @@ class Consulta {
     return this
   }
 
-  // --- orden y paginacion ---
   order(columna, opciones) { this.orden.push({ columna, opciones }); return this }
   limit(n) { this.maximo = n; return this }
   range(desde, hasta) { this.rango = [desde, hasta]; return this }
 
-  // --- resultado unico ---
   single() { this.unico = 'single'; return this }
   maybeSingle() { this.unico = 'maybeSingle'; return this }
 
-  // --- thenable: al hacer await se resuelve la respuesta configurada ---
   then(resolver, rechazar) {
     return Promise.resolve()
       .then(() => this.cliente.resolver(this))
@@ -107,11 +81,8 @@ export class ClienteSupabaseMock {
       getSession: async () => this._auth('getSession', {}),
       onAuthStateChange: (callback) => {
         this.llamadas.push({ tipo: 'auth.onAuthStateChange' })
-        // Se guarda el callback para que un test pueda simular un cambio de
-        // sesion (login, logout, renovacion de token) desde fuera.
+        // El callback se guarda para simular cambios de sesión; la subscription expone unsubscribe como en v2.
         this.callbackAuthStateChange = callback
-        // supabase-js v2 devuelve `{ data: { subscription } }` y AuthContext
-        // hace `listener.subscription.unsubscribe()` al desmontar.
         return { data: { subscription: { unsubscribe: () => {} } } }
       },
     }
@@ -126,11 +97,9 @@ export class ClienteSupabaseMock {
       }),
     }
 
-    /* Edge Functions. `invoke` devuelve `{ data, error }` como el cliente real.
-       El `error` que devuelve supabase-js v2 trae `context` con la `Response`
-       original: por eso `mensajeDeLaFuncion` de `BarberiaForm` puede leer el
-       cuerpo y sacar el motivo en español. Un test puede construir ese
-       `context` a mano: `{ json: async () => ({ error: '...' }) }`. */
+    // `invoke` devuelve { data, error } como el cliente real; el error de supabase-js v2 trae
+    // `context` con la Response original, que `mensajeDeLaFuncion` lee para dar el motivo en español.
+
     this.functions = {
       invoke: async (nombre, opciones = {}) => {
         this.llamadas.push({
@@ -150,7 +119,6 @@ export class ClienteSupabaseMock {
     return this
   }
 
-  // --- configuracion por el test ---
   on(tabla, operacion, respuesta) {
     this.respuestas.set(`${tabla}.${operacion}`, respuesta)
     return this
@@ -160,7 +128,6 @@ export class ClienteSupabaseMock {
   onStorage(operacion, respuesta) { this.respuestasStorage.set(operacion, respuesta); return this }
   onFunction(nombre, respuesta) { this.respuestasFunciones.set(nombre, respuesta); return this }
 
-  // --- API que consume la aplicacion ---
   from(tabla) { return new Consulta(this, tabla, 'select') }
 
   rpc(nombre, argumentos) {
@@ -176,10 +143,7 @@ export class ClienteSupabaseMock {
       operacion: consulta.operacion,
       filtros: consulta.filtros,
       carga: consulta.carga,
-      // Se registra lo que se PIDIÓ a la base (columnas, orden y opciones), para
-      // poder comprobar que la consulta acota por barberia_id, pide el orden
-      // correcto y resuelve el conflicto en la columna esperada. El mock no
-      // reordena los datos: los devuelve tal cual.
+      // Se registra lo pedido (columnas/orden/opciones) para verificar los filtros; el mock no reordena.
       columnas: consulta.columnas,
       orden: consulta.orden,
       opciones: consulta.opciones,

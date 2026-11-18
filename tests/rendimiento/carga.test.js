@@ -1,8 +1,4 @@
-// tests/rendimiento/carga.test.js
-//
-// Prueba de carga: N lecturas concurrentes del listado de citas de una
-// barbería, midiendo mediana y p95. No satures: 30 lecturas en paralelo.
-//
+// Carga: 30 lecturas concurrentes del listado de citas; mide mediana y p95.
 // Lee TEST_SUPABASE_URL y TEST_SUPABASE_PUBLISHABLE_KEY del entorno.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'

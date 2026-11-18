@@ -1,10 +1,5 @@
-// tests/integration/indice-unico.test.js
-// El indice unico de las franjas (`citas_slot_unico`) comprobado contra la
-// base REAL.
-//
-// Matriz v3:
-//   F-05 «Reservar una cita»: «la franja queda bloqueada y un segundo intento
-//        en la misma franja se rechaza con el error 23505».
+// `citas_slot_unico` comprobado contra la base REAL: una segunda reserva en la
+// misma franja se rechaza con 23505 (F-05).
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -23,8 +18,7 @@ import {
 const FECHA = fechaDePrueba()
 
 let sesiones = null
-// Cada PRUEBA tiene su propia marca: los archivos corren en paralelo y una
-// limpieza global se comia las filas del archivo vecino.
+// Cada prueba tiene su marca: los archivos corren en paralelo y una limpieza global borraba las filas ajenas.
 let marca = null
 
 beforeAll(async () => {
@@ -83,8 +77,7 @@ describe.skipIf(!hayClaveAnon())('Indice unico · la franja se bloquea', () => {
       .single()
     expect(errorInsert).toBeNull()
 
-    // Se cancela con la RPC del portal: solo puede cancelar quien es el
-    // `cliente_id` de la cita, asi que la cita es del dueno.
+    // La RPC del portal solo deja cancelar al `cliente_id` de la cita.
     const { error: errorCancelar } = await sesiones.dueno.rpc('cancelar_cita', { p_id: cita.id })
     expect(errorCancelar).toBeNull()
 
@@ -95,8 +88,7 @@ describe.skipIf(!hayClaveAnon())('Indice unico · la franja se bloquea', () => {
       .single()
     expect(cancelada.estado).toBe('cancelada')
 
-    // Y ahora la misma franja se vuelve a reservar sin problema: el indice es
-    // parcial y excluye las citas canceladas.
+    // El índice es parcial: excluye canceladas, así que la franja se libera.
     const { data: nueva, error: errorNueva } = await sesiones.dueno
       .from('citas')
       .insert([citaDePrueba({ marca, ...slot })])

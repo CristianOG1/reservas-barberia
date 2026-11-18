@@ -1,12 +1,5 @@
-// tests/integration/reglas.test.js
-// Las reglas de la tabla `barberias` que el formulario y la Edge Function
-// anticipan, comprobadas contra la base REAL (la ultima palabra es el
-// `CHECK` y el indice unico de la base).
-//
-// Matriz v3:
-//   F-15 «Administrar las barberias registradas»
-//   F-16 «Crear una barberia junto con la cuenta de su dueno»: «un slug
-//        reservado o con formato invalido se rechaza con el motivo».
+// Reglas de `barberias` comprobadas contra la base REAL (F-15/F-16).
+// El `CHECK` y el índice único mandan, no el formulario ni la Edge Function.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -18,8 +11,7 @@ import {
 } from '../helpers/integracion.js'
 
 let sesiones = null
-// Cada PRUEBA tiene su propia marca: los archivos corren en paralelo y una
-// limpieza global se comia las filas del archivo vecino.
+// Cada prueba tiene su marca: los archivos corren en paralelo y una limpieza global borraba las filas ajenas.
 let marca = null
 
 beforeAll(async () => {

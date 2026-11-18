@@ -1,12 +1,5 @@
-// tests/integration/RPC.test.js
-// Permisos de las funciones de la base y comportamiento de las que el publico
-// si puede usar.
-//
-// Matriz v3:
-//   F-05 «Reservar una cita» (la franja ocupada se consulta por RPC)
-//   F-06 «Gestionar el estado de una cita» (cancelar/reprogramar solo las suyas)
-//   F-15 «Administrar las barberias registradas» (el resumen es del superadmin)
-//   F-17 «Asignar automaticamente el barbero de la cita»
+// Permisos de las RPC y comportamiento de las que el público puede usar (F-05, F-06, F-15, F-17).
+// El resumen es solo del superadmin; cancelar/reprogramar, solo las citas propias.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -27,8 +20,7 @@ const FECHA = fechaDePrueba()
 const HOY = new Date().toISOString().slice(0, 10)
 
 let sesiones = null
-// Cada PRUEBA tiene su propia marca: los archivos corren en paralelo y una
-// limpieza global se comia las filas del archivo vecino.
+// Cada prueba tiene su marca: los archivos corren en paralelo y una limpieza global borraba las filas ajenas.
 let marca = null
 
 beforeAll(async () => {
@@ -97,8 +89,7 @@ describe.skipIf(!hayClaveAnon())('RPC · las de recordatorios no se pueden llama
 
 describe.skipIf(!hayClaveAnon())('RPC · las de consulta de agenda si responden a anon', () => {
   it('INT-16 · F-05 · horas_ocupadas responde a anon y lista las horas tomadas', async () => {
-    // La cita se crea CON barbero: `horas_ocupadas` con `barbero_id = null`
-    // solo devuelve las horas en las que no queda ni un barbero libre.
+    // Con `barbero_id = null`, `horas_ocupadas` solo devuelve horas sin ningún barbero libre.
     const { data: creada, error: errorInsert } = await sesiones.dueno
       .from('citas')
       .insert([citaDePrueba({ marca, ...franja(FECHA, 1), barbero_id: BARBERO_A_1 })])
@@ -240,8 +231,7 @@ describe.skipIf(!hayClaveAnon())('RPC · las cuentas del seed tienen el papel qu
   })
 
   it('INT-25 · F-08 · es_superadmin solo es cierto para el proveedor', async () => {
-    // `perfiles` solo deja leer la fila propia (su unica politica es
-    // `auth.uid() = id`), asi que el papel se comprueba con la funcion.
+    // `perfiles` solo deja leer la fila propia: el papel se comprueba con la función.
     const { data: esProveedor } = await sesiones.proveedor.rpc('es_superadmin')
     const { data: esDueno } = await sesiones.dueno.rpc('es_superadmin')
     const { data: esDuenoNorte } = await sesiones.duenoNorte.rpc('es_superadmin')

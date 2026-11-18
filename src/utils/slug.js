@@ -6,13 +6,10 @@ export const SLUG_MIN = 3
 export const SLUG_MAX = 40
 
 // Palabras que no pueden ser slug: chocan con direcciones del software.
-const RESERVADOS = ['www', 'app', 'admin', 'api', 'superadmin', 'mail', 'soporte']
+// Debe coincidir con SLUGS_RESERVADOS de src/utils/dominio.js y con el check de la base.
+const RESERVADOS = ['www', 'app', 'admin', 'api', 'superadmin', 'mail', 'soporte', 'avisos', 'send']
 
-/**
- * Sugiere un slug a partir del nombre: minúsculas, sin acentos, con guiones
- * simples. Se recalcula mientras el nombre cambia hasta que el usuario escribe
- * el slug a mano.
- */
+// Slug sugerido desde el nombre: minúsculas, sin acentos, guiones simples.
 export function slugDeNombre(nombre) {
   return String(nombre)
     .normalize('NFD')
@@ -24,10 +21,7 @@ export function slugDeNombre(nombre) {
     .replace(/-+$/, '')
 }
 
-/**
- * Devuelve el motivo por el que un slug no sirve, o null si es válido. Son las
- * mismas reglas que aplica el `check barberias_slug_valido` y la Edge Function.
- */
+// Motivo de rechazo, o null; mismas reglas que el check de la BD y la Edge Function.
 export function motivoSlugInvalido(slug) {
   if (slug.length < SLUG_MIN || slug.length > SLUG_MAX) {
     return `El slug debe tener entre ${SLUG_MIN} y ${SLUG_MAX} caracteres.`

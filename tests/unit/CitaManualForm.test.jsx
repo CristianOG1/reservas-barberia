@@ -140,7 +140,7 @@ describe('CitaManualForm', () => {
     await user.click(screen.getByRole('button', { name: 'Crear cita' }))
 
     // El aviso explica cuántos dígitos se esperan.
-    expect(await screen.findByText(/3 dígitos/)).toBeInTheDocument()
+    expect(await screen.findByText(/exactamente 10 dígitos/)).toBeInTheDocument()
     // No se guarda nada: la cita no quedaría con un teléfono inservible.
     expect(guardada).not.toHaveBeenCalled()
     expect(
@@ -148,5 +148,14 @@ describe('CitaManualForm', () => {
         (c) => c.tipo === 'query' && c.tabla === 'citas' && c.operacion === 'insert'
       )
     ).toBeUndefined()
+  })
+
+  it('F-08 · el teléfono se limpia al escribir y se corta a 10 dígitos', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    montarCitaManual()
+
+    await user.type(screen.getByLabelText('Teléfono (WhatsApp) *'), '55-1234-5678-99')
+
+    expect(screen.getByLabelText('Teléfono (WhatsApp) *')).toHaveValue('5512345678')
   })
 })

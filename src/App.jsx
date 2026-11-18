@@ -17,6 +17,7 @@ import { useBarberia } from './context/useBarberia'
 import { useAuth } from './context/useAuth'
 import ProductosPage from './pages/ProductosPage'
 import ContactoPage from './components/Contacto'
+import PrivacidadPage from './pages/PrivacidadPage'
 import ServicesPage from './pages/ServicesPage'
 import Productos from './components/Productos'
 import ClienteDashboard from './pages/cliente/ClienteDashboard'
@@ -54,15 +55,8 @@ function LayoutPublico() {
   )
 }
 
-// Pantalla de una barbería que no existe o está de baja. Vive fuera de cualquier
-// layout: sin barbería no hay Navbar ni catálogo que mostrar. Usa el tema oscuro
-// del sitio público, que es donde cae el visitante.
-// Dos motivos distintos dan dos textos distintos:
-// - `sitioPrincipal`: el host es el dominio del software sin subdominio. No es un
-//   error, es la entrada: aquí funcionan `/login` y `/superadmin`, y no hay
-//   barbería que elegir sin su dirección. **No consulta datos** (§3).
-// - cualquier otro caso: sí se pidió una barbería concreta y no hay nada que
-//   mostrar, con el aviso de `VITE_BARBERIA_SLUG` cuando tampoco se pudo resolver.
+// Sin barbería: el sitio principal es la entrada (/login, /superadmin); el resto
+// avisa de que la barbería no existe o está de baja. Sin consultar datos.
 function BarberiaNoDisponible({ sinSlug, sitioPrincipal, dominioBase }) {
   if (sitioPrincipal) {
     const ejemplo = dominioBase ? `kromatik.${dominioBase}` : 'kromatik.tudominio.com'
@@ -114,26 +108,14 @@ function Contenido() {
   const { session, rol, cargandoRol, unirmeABarberia } = useAuth()
   const { pathname } = useLocation()
 
-  /* Las dos rutas que no pertenecen a ninguna barbería: el panel del superadmin
-     (multi-barbería, se abre desde el dominio principal, sin slug) y el login.
-     Ninguna de las dos debe quedar bloqueada por la pantalla "Esta barbería no
-     está disponible" ni esperar a que se resuelva una barbería: el login tiene
-     que funcionar aunque `VITE_BARBERIA_SLUG` falte o apunte a una barbería que no
-     existe (si no, sin barbería no se puede entrar a ninguna zona, tampoco al
-     superadmin). Todo lo demás sigue montándose solo con barbería resuelta. */
+  // /login y /superadmin no tienen barbería: no deben esperarla ni bloquearse.
   const sinBarberia =
     pathname === '/login' ||
     pathname.startsWith('/login/') ||
     pathname === '/superadmin' ||
     pathname.startsWith('/superadmin/')
 
-  /* Membresía automática: un cliente que entra a una barbería —al iniciar
-     sesión, al registrarse, o al llegar con la sesión ya abierta a otro
-     subdominio— queda dado de alta como miembro de ESA barbería, sin pantallas
-     ni pasos extra. La RPC es idempotente y vuelve a comprobar el rol en el
-     servidor, así que un `rol` todavía sin refrescar no puede colar a un admin.
-     Se corre una vez por usuario y barbería: al no remontarse `Contenido` al
-     navegar, no se repite en cada cambio de ruta. */
+  // Alta automática de membresía: la RPC es idempotente y revalida el rol en servidor.
   const userId = session?.user?.id
   const barberiaId = barberia?.id
 
@@ -203,10 +185,19 @@ function Contenido() {
         <Route path="configuracion" element={<ConfiguracionAdmin />} />
       </Route>
 
-      {/* Agendar sigue fuera del layout: es una pantalla completa, sin navbar. */}
-      <Route path="/agendar" element={<BookingPageLazy />} />
+      {/* Agendar sigue fuera del layout: es una pantalla completa, sin navbar.
+          ConfiguracionProvider para que BookingPage lea bloques_horario y dias_cerrados. */}
+      <Route
+        path="/agendar"
+        element={
+          <ConfiguracionProvider>
+            <BookingPageLazy />
+          </ConfiguracionProvider>
+        }
+      />
 
-      <Route element={<LayoutPublico />}>
+      {/* El Navbar lee useConfiguracion: el layout público necesita el provider. */}
+      <Route element={<ConfiguracionProvider><LayoutPublico /></ConfiguracionProvider>}>
         <Route
           index
           element={
@@ -220,6 +211,7 @@ function Contenido() {
         <Route path="productos" element={<ProductosPage />} />
         <Route path="servicios" element={<ServicesPage />} />
         <Route path="contacto" element={<ContactoPage />} />
+        <Route path="privacidad" element={<PrivacidadPage />} />
       </Route>
 
       <Route

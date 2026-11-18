@@ -5,11 +5,14 @@ import { describe, expect, it } from 'vitest'
 import {
   buscarServicio,
   duracionTotalCita,
+  esTelefonoValido,
   estadoDe,
   mensajeRecordatorio,
   normalizar,
+  normalizarTelefono,
   partirServicios,
   productosCita,
+  validarTelefonoMexico,
 } from '../../src/utils/citas'
 
 const CATALOGO = [
@@ -114,5 +117,51 @@ describe('mensajeRecordatorio', () => {
     expect(texto).toContain('Salon Demo')
     expect(texto).toContain('2:30 PM')
     expect(texto).toContain('Barba')
+  })
+})
+
+describe('normalizarTelefono', () => {
+  it('deja solo digitos y corta a 10', () => {
+    expect(normalizarTelefono('+52 (55) 1234-5678')).toBe('5255123456')
+    expect(normalizarTelefono('55 1234 5678')).toBe('5512345678')
+  })
+
+  it('devuelve cadena vacia sin datos', () => {
+    expect(normalizarTelefono(null)).toBe('')
+    expect(normalizarTelefono('abc')).toBe('')
+  })
+})
+
+describe('esTelefonoValido', () => {
+  it('acepta exactamente 10 digitos', () => {
+    expect(esTelefonoValido('5512345678')).toBe(true)
+    expect(esTelefonoValido('55 1234 5678')).toBe(true)
+  })
+
+  it('rechaza longitudes distintas de 10', () => {
+    expect(esTelefonoValido('123')).toBe(false)
+    expect(esTelefonoValido('55123456789')).toBe(false)
+    expect(esTelefonoValido('')).toBe(false)
+  })
+
+  it('rechaza un numero con el mismo digito repetido', () => {
+    expect(esTelefonoValido('0000000000')).toBe(false)
+    expect(esTelefonoValido('5555555555')).toBe(false)
+  })
+})
+
+describe('validarTelefonoMexico', () => {
+  it('no devuelve error con un telefono valido', () => {
+    expect(validarTelefonoMexico('5512345678')).toBe(null)
+  })
+
+  it('explica cuando faltan digitos', () => {
+    expect(validarTelefonoMexico('123')).toBe('El teléfono debe tener exactamente 10 dígitos.')
+  })
+
+  it('rechaza digitos repetidos', () => {
+    expect(validarTelefonoMexico('0000000000')).toBe(
+      'El teléfono no es válido: no puede repetir el mismo dígito.'
+    )
   })
 })

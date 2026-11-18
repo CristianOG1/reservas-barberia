@@ -1,11 +1,4 @@
-// tests/unit/AuthContext.test.jsx
-// Sesion, rol y barberia del usuario.
-//
-// Matriz v3: F-01 «Acceder al sistema: registrarse, iniciar sesion y cerrar
-// sesion».
-//
-// Aqui se prueba el AuthProvider REAL, con el cliente de Supabase mockeado:
-// lo que se observa es lo que el resto de la app veria a traves de useAuth().
+// AuthProvider REAL con Supabase mockeado (F-01): sesión, rol y barbería tal como los ve el resto de la app.
 
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -13,7 +6,6 @@ import { AuthProvider } from '../../src/context/AuthProvider'
 import { useAuth } from '../../src/context/useAuth'
 import { supabaseMock } from '../mocks/supabaseClient'
 
-/** Lee del contexto lo mismo que hacen el resto de componentes de la app. */
 function Sonda() {
   const { session, rol, cargandoRol, barberiaId, logout, login, unirmeABarberia } = useAuth()
   return (
@@ -215,9 +207,7 @@ describe('AuthContext', () => {
 
   it('F-01 · un usuario sin fila en perfiles queda con el rol por defecto, cliente', async () => {
     supabaseMock.onAuth('getSession', { data: { session: SESION }, error: null })
-    // El trigger de la base crea la fila, pero si el usuario se registro antes
-    // de que existiera, puede no tener perfil: el rol debe caer en 'cliente',
-    // que es el de menor privilegio.
+    // Sin fila en `perfiles` (usuario anterior al trigger), el rol cae en 'cliente', el de menor privilegio.
     supabaseMock.on('perfiles', 'select', { data: [] })
 
     render(

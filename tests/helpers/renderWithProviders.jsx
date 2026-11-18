@@ -1,44 +1,12 @@
-// tests/helpers/renderWithProviders.jsx
-// Envoltorio de render para las pruebas de componentes que dependen de los
-// contextos de la app.
-//
-// Cubre tres contextos:
-//   - AuthContext    -> NO se exporta desde `src/context/AuthProvider.jsx`, asi
-//                        que no se puede inyectar con un Provider. El archivo
-//                        de prueba lo sustituye con un mock del modulo (ver
-//                        `authSimulado` mas abajo).
-//   - BarberiaContext-> SI se exporta (`src/context/barberia.js`).
-//   - ConfiguracionContext -> SI se exporta (`src/context/configuracion.js`).
-//
-// Uso tipico en un archivo de prueba:
-//
-//   import { authSimulado, renderWithProviders } from '../helpers/renderWithProviders'
-//
-//   vi.mock('../../src/context/useAuth', async (importOriginal) => {
-//     const real = await importOriginal()
-//     const { authSimulado } = await import('../helpers/renderWithProviders')
-//     return { ...real, useAuth: () => authSimulado.valor }
-//   })
-//
-//   renderWithProviders(<ProtectedRoute roles={['admin']}><Hijo /></ProtectedRoute>, {
-//     ruta: '/admin',
-//     auth: { session: SESION, rol: 'admin' },
-//     barberia: { barberia: { id: 'b1' }, cargando: false },
-//   })
-//
-// El mock de `supabaseClient` se registra globalmente en `tests/setup.js`, asi
-// que ningun test toca la red.
+// Render con BarberiaContext y ConfiguracionContext inyectables y router en memoria.
+// AuthContext no se exporta: se simula con vi.mock de src/context/useAuth (`authSimulado`); Supabase se moca en tests/setup.js.
 
 import { render } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { BarberiaContext } from '../../src/context/barberia'
 import { ConfiguracionContext } from '../../src/context/configuracion'
 
-/**
- * Valor base de `useAuth()`. Cada render parte de una copia de ESTE objeto,
- * nunca del valor anterior: si no, un test que fija `cargando: true` se lo
- * heredaria al siguiente y todos verian "Cargando...".
- */
+// Cada render copia este objeto, no el anterior: si no, un `cargando: true` se hereda al siguiente test.
 const AUTH_POR_DEFECTO = {
   session: null,
   cargando: false,
@@ -50,15 +18,11 @@ const AUTH_POR_DEFECTO = {
   unirmeABarberia: async () => ({ error: null }),
 }
 
-/**
- * Valor simulado que devuelve `useAuth()`. Los archivos de prueba que
- * inyectan una sesión deben apuntar su `useAuth` aqui.
- */
+// Los tests con sesión apuntan su mock de `useAuth` a este valor.
 export const authSimulado = {
   valor: { ...AUTH_POR_DEFECTO },
 }
 
-/** Valor por defecto de `useBarberia()`: barbería aún no resuelta. */
 export const BARBERIA_POR_DEFECTO = {
   barberia: null,
   cargando: false,
@@ -68,7 +32,6 @@ export const BARBERIA_POR_DEFECTO = {
   sitioPrincipal: false,
 }
 
-/** Valor por defecto de `useConfiguracion()`. */
 export const CONFIGURACION_POR_DEFECTO = {
   configuracion: {
     id: null,
@@ -83,7 +46,7 @@ export const CONFIGURACION_POR_DEFECTO = {
   refrescar: async () => {},
 }
 
-/** Sesión simulada con la forma que devuelve Supabase Auth. */
+// Con la forma que devuelve Supabase Auth.
 export function sesionSimulada(overrides = {}) {
   return {
     access_token: 'token-de-prueba',
@@ -100,23 +63,11 @@ export function sesionSimulada(overrides = {}) {
   }
 }
 
-/**
- * Renderiza `ui` dentro de un router en memoria y de los contextos que se
- * pueden inyectar.
- *
- * @param {React.ReactElement} ui        Lo que se quiere renderizar
- * @param {object} opciones
- * @param {string} opciones.ruta          Ruta inicial del router (por defecto '/')
- * @param {object} opciones.auth         Valores simulados de AuthContext
- * @param {object} opciones.barberia     Valores simulados de BarberiaContext
- * @param {object} opciones.configuracion Valores simulados de ConfiguracionContext
- */
+// `auth` se simula vía authSimulado; los demás contextos se inyectan como Provider.
 export function renderWithProviders(ui, opciones = {}) {
   const { ruta = '/', auth, barberia, configuracion } = opciones
 
   if (auth !== undefined) {
-    // Se parte siempre del valor base, no del anterior: asi un test no
-    // hereda el `cargando` o el `rol` que fijo el test previo.
     authSimulado.valor = { ...AUTH_POR_DEFECTO, ...auth }
   }
 

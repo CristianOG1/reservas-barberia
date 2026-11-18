@@ -1,13 +1,6 @@
 // src/pages/superadmin/SuperadminDashboard.jsx
-// Shell del panel del superadmin: el dueño del software, que administra TODAS
-// las barberías. Misma estructura responsive que AdminDashboard (rail lateral en
-// lg+, barra superior con menú hamburguesa en celulares, logout) y el mismo
-// sistema visual del panel (slate-50 de fondo, superficies blancas, `primary`).
-//
-// Lo que NO se copia del admin y por qué:
-//  - no lee `configuracion`: esa fila es POR barbería y aquí no hay ninguna;
-//  - no lleva el buscador decorativo ni la campana de notificaciones, que en el
-//    admin son controles muertos (§18.9, §9.1).
+// Shell del dueño del software: como AdminDashboard, pero sin configuración ni
+// controles decorativos (esa fila es por barbería y aquí no hay ninguna).
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../../context/useAuth'

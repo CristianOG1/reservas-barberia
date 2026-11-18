@@ -5,7 +5,6 @@ import { useBarberia } from '../../context/useBarberia'
 import { STOCK_MINIMO, productosConStockBajo } from '../../utils/resumen'
 import ProductoForm from './ProductoForm'
 
-/* ===== Íconos ===== */
 
 function IconoBuscar() {
   return (
@@ -140,11 +139,9 @@ export default function ProductosAdmin() {
   }
   const alGuardar = () => { cerrarForm(); cargarProductos() }
 
-  /* ---- Métricas vía query real ---- */
   const totalValorInventario = productos.reduce((acc, p) => acc + (p.precio * (p.stock ?? 0)), 0)
   const stockBajo = productosConStockBajo(productos).length
 
-  /* ---- Filtro + búsqueda ---- */
   const categorias = [...new Set(productos.map(p => p.categoria).filter(Boolean))]
 
   const productosFiltrados = productos.filter(p => {
@@ -188,7 +185,6 @@ export default function ProductosAdmin() {
         </div>
       </div>
 
-      {/* ===== Avisos ===== */}
       {errorAccion && (
         <p
           role="alert"

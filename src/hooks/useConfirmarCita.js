@@ -1,22 +1,8 @@
 // src/hooks/useConfirmarCita.js
-// Helper compartido para confirmar una cita desde Resumen y Gestión de Citas.
-// Optimistic update: cambia el estado local de inmediato; si Supabase devuelve
-// error, revierte y comunica el mensaje. Cada página conserva la propiedad de su
-// propio listado (`citas`/`citasSemana`) y vuelve a consultar al montar, por eso
-// toda la lógica de confirmar vive en este único lugar y no se duplica.
+// Confirmar con optimistic update y reversión; cada página conserva su listado.
 import { supabase } from '../supabaseClient'
 
-/**
- * @param {(updater: (prev: any[]) => any[]) => void} setCitas
- *   Setter del array de citas de la página (setCitas en CitasAdmin,
- *   setCitasSemana en ResumenPage).
- * @param {(msg: string | null) => void} [setErrorMsg]
- *   Setter opcional para mostrar el error devuelto por Supabase.
- * @param {string | null} [barberiaId]
- *   Barbería del panel. Acota el UPDATE a las citas de esa barbería (además de
- *   la RLS, que ya exige `barberia_id = barberia_del_usuario()`).
- * @returns {(cita: any) => Promise<void>}
- */
+// setCitas: setter de la página; barberiaId acota el UPDATE (además de la RLS).
 export function useConfirmarCita(setCitas, setErrorMsg, barberiaId) {
   return async (cita) => {
     const anterior = cita.estado || 'pendiente'

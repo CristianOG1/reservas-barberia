@@ -1,22 +1,5 @@
-// tests/rendimiento/generar_datos.js
-//
-// Carga un volumen ficticio realista en el proyecto de PRUEBAS de Supabase para
-// las pruebas de rendimiento, o lo borra todo con --borrar.
-//
-// Lee TEST_SUPABASE_URL y TEST_SUPABASE_PUBLISHABLE_KEY del entorno (poblado
-// desde .env.test cuando exista). Nunca apunta a produccion: el guard de
-// tests/integration/setup.js solo valida integracion, asi que este script
-// incluye su propia verificacion de que la URL no sea la de produccion.
-//
-// Uso:
-//   TEST_SUPABASE_URL=https://... TEST_SUPABASE_PUBLISHABLE_KEY=... \
-//     node tests/rendimiento/generar_datos.js
-//   TEST_SUPABASE_URL=https://... TEST_SUPABASE_PUBLISHABLE_KEY=... \
-//     node tests/rendimiento/generar_datos.js --borrar
-//
-// Al terminar la carga imprime la instruccion para correr
-//   analyze public.citas;
-// en el SQL Editor de Supabase.
+// Carga datos ficticios en el proyecto de PRUEBAS (o --borrar); lee TEST_* del entorno/.env.test y verifica por su cuenta que no apunte a producción (el guard de integration no cubre este script).
+// Uso: TEST_SUPABASE_URL=... TEST_SUPABASE_PUBLISHABLE_KEY=... node tests/rendimiento/generar_datos.js [--borrar]; al terminar sugiere `analyze public.citas;`.
 
 import { createClient } from '@supabase/supabase-js'
 
@@ -217,9 +200,7 @@ async function crearCitas(barberiaIds) {
 }
 
 async function borrarTodo() {
-  // No hay ON DELETE CASCADE en citas.barberia_id (schema.sql linea 198:
-  // uuid not null references public.barberias(id)), asi que hay que borrar
-  // las citas antes de las barberias para no dejar restos ni violar FK.
+  // Sin ON DELETE CASCADE en `citas.barberia_id`: borrar citas antes que barberías para no violar la FK.
   console.log('Borrando citas de prueba...')
   await supabase.from('citas').delete().like('notas', `${PREFIJO}%`)
   console.log('Borrando servicios, productos, barberos de prueba...')

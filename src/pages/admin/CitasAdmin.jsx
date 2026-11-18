@@ -1,10 +1,5 @@
 // src/pages/admin/CitasAdmin.jsx
-// Gestión de Citas & Calendario del Salón.
-// Página más grande del panel: se organiza en secciones — 1) header, 2) métricas,
-// 3) controles de la tabla, 4) tabla de citas, 5) distribución semanal y
-// recordatorios. Los datos vienen de `citas` y `barberos` reales; lo que aún no
-// existe en el modelo (pago, recordatorios, vista calendario) se muestra como UI
-// navegable y está marcado en el código como pendiente de lógica.
+// Gestión de citas y calendario del salón: métricas, tabla y recordatorios.
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import CitaManualForm from './CitaManualForm'
@@ -12,18 +7,16 @@ import { useConfirmarCita } from '../../hooks/useConfirmarCita'
 import { useConfiguracion } from '../../context/useConfiguracion'
 import { useBarberia } from '../../context/useBarberia'
 import {
+  bloquesDeConfig,
+  diasCerradosDeConfig,
   duracionTotalCita,
   estadoDe,
   mensajeRecordatorio,
   partirServicios,
   productosCita,
 } from '../../utils/citas'
-import { DIAS_CORTO, FechaISO, etiquetaFecha, formatearHora, formatRecordatorio, minutosDeHora } from '../../utils/fecha'
+import { DIAS_CORTO, FechaISO, etiquetaFecha, formatearHora, formato12h, formatRecordatorio, minutosDeHora } from '../../utils/fecha'
 import { telefonoParaWhatsApp } from '../../utils/telefono'
-
-/* ============================================================
-   1. UTILIDADES DE FECHA, HORA Y CATÁLOGO
-   ============================================================ */
 
 const ETIQUETA_ESTADO = {
   pendiente: 'Pendiente',
@@ -32,8 +25,7 @@ const ETIQUETA_ESTADO = {
   cancelada: 'Cancelada',
 }
 
-// Colores de estado. Mismo mapa que usa ResumenPage: ámbar pendiente, azul
-// confirmada, verde completada, rojo cancelada.
+// Mismo mapa de estados que ResumenPage.
 const BADGE_ESTADO = {
   pendiente: 'bg-amber-50 text-amber',
   confirmada: 'bg-primary-100 text-primary',
@@ -43,37 +35,6 @@ const BADGE_ESTADO = {
 
 const ITEMS_POR_PAGINA = 8
 const FILTRO_SIN_ASIGNAR = 'sin-asignar'
-
-// 'estado' es nullable en la base: las citas nuevas nacen sin estado.
-// Fecha local en formato YYYY-MM-DD. Se parsesa explícitamente en hora local:
-// `new Date('2026-09-30')` se interpretaría en UTC y en México mostraría el 29.
-// `citas.hora` es una columna `time`: llega como 'HH:MM:SS'. El flujo público
-// guarda textos tipo '10:00 AM', así que se aceptan ambos formatos.
-/* ---- Recordatorio por WhatsApp ---- */
-
-/**
- * Normaliza un teléfono al formato que wa.me espera: solo dígitos y con código de
- * país. Acepta lo que la gente escribe de verdad ('55 1234 5678', '+52 1 55…').
- * @returns {{ numero: string, motivo: string }} `numero` vacío si no hay número
- *   usable, y `motivo` explicando por qué, para poder ponerlo en el `title`.
- */
-/**
- * Marca de tiempo de un recordatorio automático, para el `title` de la etiqueta.
- * Las columnas `recordatorio_24h_enviado_at` y `recordatorio_2h_enviado_at` las
- * escribe la Edge Function con `now()`, así que llegan como timestamptz ISO.
- */
-// Una cita puede traer varios servicios: `citas.servicio` los guarda unidos con
-// ', ' (el flujo público permite selección múltiple desde 2026-10).
-// `citas.servicio` es texto libre y casi nunca coincide con `servicios.nombre`
-// (el catálogo dice 'Corte de Cabello', las citas dicen 'Corte'). Se resuelve
-// por nombre exacto, luego por categoría exacta y luego por categoría contenida.
-// Duración acumulada de TODOS los servicios de la cita. Los que no están en el
-// catálogo caen al valor por defecto, como ya pasaba con el servicio único.
-// Productos de la cita: la columna es jsonb con [{ nombre, precio }]. Puede
-// llegar como texto si alguien la insertó a mano.
-/* ============================================================
-   2. ICONOS
-   ============================================================ */
 
 function IconoCalendario() {
   return (
@@ -163,8 +124,7 @@ function IconoReactivar() {
   )
 }
 
-// Icono de WhatsApp. Trazo, no relleno, para empatar con los demás iconos del
-// set (todos son outline de 24x24 con stroke currentColor).
+// Trazo, no relleno, para empatar con el resto de iconos (outline 24x24).
 function IconoWhatsApp() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" aria-hidden="true">
@@ -206,14 +166,7 @@ function IconoBarras() {
   )
 }
 
-/* Interruptor de un canal de la tarjeta de recordatorios (correo / WhatsApp).
-   Es el MISMO control que usan `BarberosAdmin` y `BarberoForm` (§9.3, §9.4):
-   `role="switch"` + `aria-checked`, pista `relative inline-flex h-5 w-9
-   rounded-full` (`bg-slate-300` / `bg-primary`) y knob `h-3.5 w-3.5 rounded-full
-   bg-white` que viaja con `translate-x-1` / `translate-x-4`. La etiqueta visible
-   hace de nombre accesible; no hay animación nueva, solo el `transition-colors`
-   que ya usa todo el admin. Al vivir una sola vez, los dos canales no pueden
-   divergir por accidente. */
+// Mismo switch que BarberosAdmin y BarberoForm: un solo sitio para los dos canales.
 function InterruptorCanal({ etiqueta, activo, ayuda, bloqueado, onToggle }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3">
@@ -243,19 +196,11 @@ function InterruptorCanal({ etiqueta, activo, ayuda, bloqueado, onToggle }) {
   )
 }
 
-/* ============================================================
-   3. ESTILOS DE LOS BOTONES DE ACCIÓN RÁPIDA
-   ============================================================ */
-
 const CLASE_ACCION = {
   primario: 'inline-flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#1a38a0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
   neutro: 'inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
   peligro: 'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600',
 }
-
-/* ============================================================
-   4. PÁGINA
-   ============================================================ */
 
 export default function CitasAdmin() {
   const [citas, setCitas] = useState([])
@@ -263,11 +208,9 @@ export default function CitasAdmin() {
   const [servicios, setServicios] = useState([])
   const [cargando, setCargando] = useState(true)
   const [errorMsg, setErrorMsg] = useState(null)
-  // El error de carga va aparte del de escritura: un fallo de red no puede
-  // verse como un día sin citas.
+  // Error de carga separado del de escritura.
   const [errorCarga, setErrorCarga] = useState('')
 
-  // Controles
   const [fechaSeleccionada, setFechaSeleccionada] = useState(() => FechaISO(new Date()))
   const [barberoFiltro, setBarberoFiltro] = useState('')
   const [tab, setTab] = useState('todas')
@@ -281,18 +224,14 @@ export default function CitasAdmin() {
   const { barberia } = useBarberia()
   const barberiaId = barberia?.id ?? null
 
-  // Lógica de confirmación compartida con Resumen: optimistic update + revert (§).
+  // Optimistic update compartido con ResumenPage.
   const confirmarCita = useConfirmarCita(setCitas, setErrorMsg, barberiaId)
 
-  // Nombre del negocio para el texto del recordatorio. Viene de la tabla
-  // `configuracion` (misma fila que el sidebar); si está vacía se usa el
-  // placeholder que ya usa el resto del panel.
+  // Nombre del negocio para el recordatorio; respaldo si la fila está vacía.
   const { configuracion, cargando: cargandoConfiguracion, refrescar: refrescarConfiguracion } = useConfiguracion()
   const nombreNegocio = configuracion.nombre?.trim() || 'Barbería'
 
-  // `new Date()` dentro del render es una función impura (react-hooks/purity): da
-  // resultados distintos en cada render. Se congela una sola vez al montar, así
-  // "hoy", "ahora" y la semana no se mueven a media sesión.
+  // Reloj congelado al montar: new Date() en el render viola react-hooks/purity.
   const [reloj] = useState(() => new Date())
 
   const cargarDatos = useCallback(async () => {
@@ -304,7 +243,6 @@ export default function CitasAdmin() {
       supabase.from('servicios').select('*').eq('barberia_id', barberiaId).order('nombre', { ascending: true }),
     ])
 
-    // Un fallo de red no puede verse como un día sin citas.
     if (citasRes.error || barberosRes.error || serviciosRes.error) {
       console.error(citasRes.error || barberosRes.error || serviciosRes.error)
       setErrorCarga('No pudimos cargar las citas. Intenta de nuevo.')
@@ -321,18 +259,14 @@ export default function CitasAdmin() {
 
   useEffect(() => {
     if (barberiaId) {
-      // La carga se dispara FUERA del cuerpo síncrono del efecto: dentro de
-      // un efecto, un `setState` síncrono provoca renders en cascada (regla
-      // `react-hooks/set-state-in-effect`).
+      // Microtarea: el setState síncrono en el efecto dispara set-state-in-effect.
       Promise.resolve().then(cargarDatos)
     }
   }, [barberiaId, cargarDatos])
 
   const barberoPorId = (id) => barberos.find((b) => b.id === id) || null
 
-  /* ---- Escrituras ----
-     Patrón optimistic update + escritura real en Supabase, pero ahora revisando
-     el `error`: si RLS o la red rechazan el cambio, se revierte y se avisa. */
+  // Optimistic update con reversión si Supabase o RLS rechazan el cambio.
   const aplicarEstado = async (cita, nuevoEstado) => {
     const anterior = estadoDe(cita)
     if (anterior === nuevoEstado) return
@@ -353,7 +287,6 @@ export default function CitasAdmin() {
     cargarDatos()
   }
 
-  /* ---- Métricas ---- */
   const hoy = FechaISO(reloj)
   const hace6 = FechaISO(new Date(reloj.getTime() - 6 * 24 * 60 * 60 * 1000))
   const manana = FechaISO(new Date(reloj.getTime() + 24 * 60 * 60 * 1000))
@@ -363,10 +296,7 @@ export default function CitasAdmin() {
   const citasSemana = citas.filter((c) => c.fecha >= hace6 && c.fecha <= hoy)
   const canceladasSemana = citasSemana.filter((c) => estadoDe(c) === 'cancelada')
 
-  // En curso: la tabla no tiene un estado 'en curso' (solo pendiente/confirmada/
-  // completada/cancelada), así que se deriva de la hora actual contra la hora de
-  // la cita y la duración del servicio. También se acepta el literal por si más
-  // adelante se agrega como estado.
+  // 'en_curso' no existía: se deriva de hora + duración en las confirmadas.
   const estaEnCurso = (cita) => {
     const e = estadoDe(cita)
     if (e === 'en_curso' || e === 'en curso') return true
@@ -378,10 +308,7 @@ export default function CitasAdmin() {
 
   const enCursoHoy = citasHoy.filter((c) => estaEnCurso(c) || estadoDe(c) === 'completada').length
 
-  /* ---- Recordatorios por WhatsApp (manuales) ----
-     Un recordatorio solo tiene sentido si la cita sigue viva y todavía no pasó:
-     estados `pendiente` o `confirmada` y fecha de hoy o posterior. Para las de
-     hoy se exige además que la hora no sea ya anterior a `ahoraMin`. */
+  // Solo citas vivas y futuras; las de hoy exigen hora >= ahora.
   const esRecordable = (cita) => {
     const e = estadoDe(cita)
     if (e !== 'pendiente' && e !== 'confirmada') return false
@@ -392,8 +319,7 @@ export default function CitasAdmin() {
     return inicio == null || inicio >= ahoraMin
   }
 
-  // Citas que conviene recordar ahora: mañana entero + las de hoy que aún no
-  // empiezan. Se ordena por fecha y hora para que la lista se lea como agenda.
+  // Mañana entero + hoy que aún no empieza, ordenados como agenda.
   const paraRecordar = citas
     .filter(esRecordable)
     .filter((c) => c.fecha === manana || c.fecha === hoy)
@@ -401,13 +327,7 @@ export default function CitasAdmin() {
       (a.fecha + a.hora).localeCompare(b.fecha + b.hora)
     )
 
-  /**
-   * Abre WhatsApp con el mensaje y marca la cita como recordada.
-   *
-   * El orden importa: la pestaña se abre SIEMPRE (es lo que el barbero quiere
-   * hacer) y el `update` va después. Si la marca falla, el recordatorio ya se
-   * envió, así que el aviso solo informa de que no quedó registrado.
-   */
+  // Abre WhatsApp antes de marcar: si el update falla, el aviso solo informa de eso.
   const recordarCita = async (cita) => {
     const { numero } = telefonoParaWhatsApp(cita.telefono)
     if (!numero) return
@@ -436,32 +356,18 @@ export default function CitasAdmin() {
 
   const recordada = (cita) => Boolean(cita.recordatorio_enviado_at)
 
-  /* ---- Envío automático: dos canales, una sola fila de `configuracion` ----
-     El correo (H-24 y H-2) lo manda la Edge Function `enviar-recordatorios`; el
-     WhatsApp, la `enviar-whatsapp`. Ninguna corre desde el panel: sus
-     interruptores son lo único que puede pararlas, así que se guardan en la base
-     y no en un useState. Cada barbería tiene el suyo (`barberia_id`), igual que
-     el nombre y el logo. */
-
-  /* Un valor por canal mientras dura la escritura: ausente = que mande el de la
-     base. Permite el cambio optimista (el switch se mueve al instante, sin
-     esperar un viaje a Supabase) y, si el `update` falla, volver al anterior sin
-     depender de otro refresco. Se limpia cuando la fila ya trae el valor nuevo,
-     para no quedarse pegado a un estado local. */
+  // Dos Edge Functions (correo y WhatsApp) con interruptor por barbería en la BD.
+  // Override por canal mientras escribe: cambio optimista y vuelta atrás si falla.
   const [overrides, setOverrides] = useState({})
   const envioActivo =
     overrides.recordatorios_activos ?? Boolean(configuracion.recordatorios_activos)
   const whatsappActivo =
     overrides.whatsapp_activo ?? Boolean(configuracion.whatsapp_activo)
 
-  /* Sin fila en `configuracion` no hay nada que actualizar, y un UPDATE sin
-     destino afecta 0 filas SIN lanzar error (§10.5): el interruptor "guardaría"
-     y no guardaría. Por eso se desactiva y se avisa, en vez de fingir. */
+  // Sin fila en configuracion el UPDATE afecta 0 filas sin error: se desactiva.
   const hayConfiguracion = Boolean(configuracion.id)
 
-  /* Los dos interruptores escriben en la misma tabla con el mismo criterio, así
-     que comparten esta función: `columna` es la que se guarda y `canal` solo
-     nombra el canal en el mensaje de error. */
+  // Ambos canales comparten esta función; `canal` solo nombra el mensaje de error.
   const alternarInterruptor = async (columna, canal) => {
     const anterior = overrides[columna] ?? Boolean(configuracion[columna])
     const nuevo = !anterior
@@ -479,16 +385,12 @@ export default function CitasAdmin() {
     fijar(nuevo)
     setGuardandoInterruptor(true)
     setErrorMsg(null)
-    // `count` a propósito, igual que en `BarberiasSuper`: un UPDATE que RLS no
-    // deja pasar afecta 0 filas **sin lanzar error** (§10.5). Con solo el `error`
-    // el interruptor se movería y nadie se enteraría de que no guardó.
+    // count: RLS puede afectar 0 filas sin lanzar error (§10.5).
     const { error, count } = await supabase
       .from('configuracion')
       .update({ [columna]: nuevo }, { count: 'exact' })
       .eq('barberia_id', barberiaId)
 
-    // El `error` se revisa por el mismo motivo: si un cliente (o una sesión sin
-    // rol) escribiera aquí, el UPDATE afectaría 0 filas sin lanzar error.
     if (error) {
       fijar(anterior)
       setGuardandoInterruptor(false)
@@ -501,15 +403,13 @@ export default function CitasAdmin() {
       setErrorMsg('No se cambió nada. Revisa que tu cuenta siga siendo la de esta barbería.')
       return
     }
-    // El refresco va antes de soltar el estado: así el interruptor no parpadea
-    // a "apagado" mientras viaja el valor bueno.
+    // Refresca antes de soltar el estado para que no parpadee el valor viejo.
     await refrescarConfiguracion()
     fijar(null)
     setGuardandoInterruptor(false)
   }
 
-  // Marcas de los correos automáticos ya enviados. Se muestran en texto pequeño,
-  // sin pill: son un dato de la cita, no un estado (§11.4).
+  // Marcas ya enviadas: texto pequeño, sin pill (§11.4).
   const MarcasCorreo = ({ cita }) => {
     const h24 = Boolean(cita.recordatorio_24h_enviado_at)
     const h2 = Boolean(cita.recordatorio_2h_enviado_at)
@@ -523,23 +423,13 @@ export default function CitasAdmin() {
     )
   }
 
-  /* Estado del envío automático de UNA cita, para la lista de la tarjeta: el
-     detalle completo de los DOS canales (enviado / pendiente / sin dato), que
-     `MarcasCorreo` de la tabla no enseña porque allí solo interesa lo que ya
-     salió. Una línea por canal: cuatro datos juntos en un renglón no se leen.
-     Sin pill y sin color como única señal: el ✓ y la palabra dicen el estado, el
-     tono solo atenúa lo que un interruptor apagado no va a resolver (§11.4). */
+  // Detalle por canal en la tarjeta: enviado / pendiente / sin dato, uno por línea.
   const EstadoRecordatorio = ({ cita, correoActivo, whatsappActivo }) => {
-    // Cancelada o completada: ya no hay nada que avisar. Hoy `paraRecordar` las
-    // filtra de entrada, pero el estado se decide aquí dentro para que ningún
-    // uso futuro pueda prometer un envío que la función no va a hacer.
+    // Cancelada o completada: ya no hay nada que avisar.
     const e = estadoDe(cita)
     if (e === 'cancelada' || e === 'completada') return null
 
-    /* Una ventana (24 h o 2 h) de un canal: lo enviado con su fecha real en el
-       `title`, lo pendiente atenuado con la explicación si el canal está
-       apagado. `etiqueta` es lo que se ve (`24 h`, `WA 24 h`) y `ventana` lo
-       que va en el `title`, donde sí cabe el nombre del canal. */
+    // Enviado lleva su fecha en title; pendiente se atenúa si el canal está apagado.
     const ventana = ({ etiqueta, ventana, canal, activo, marca }) =>
       marca ? (
         <span title={`${canal} de ${ventana} enviado ${formatRecordatorio(marca)}`}>
@@ -554,11 +444,8 @@ export default function CitasAdmin() {
         </span>
       )
 
-    /* Una línea completa de un canal, o el motivo por el que no va a llegar
-       nada. El prefijo `WA ` distingue el WhatsApp del correo. El filtro de
-       "sin dato" copia el de las funciones del servidor (§10.7): vacio o en
-       blanco, nada más — un teléfono que no se puede normalizar lo reporta y
-       libera la marca la Edge Function, no esta etiqueta. */
+    // El prefijo 'WA ' distingue el canal; "sin dato" usa el filtro del servidor (§10.7):
+    // un teléfono no normalizable lo libera la Edge Function, no esta etiqueta.
     const lineaCanal = ({ prefijo, canal, activo, faltaDato, textoFalta, marca24, marca2h }) =>
       faltaDato ? (
         <span className="text-slate-400">{textoFalta}</span>
@@ -598,7 +485,6 @@ export default function CitasAdmin() {
     ? Math.round(((citasSemana.length - canceladasSemana.length) / citasSemana.length) * 100)
     : null
 
-  /* ---- Distribución de los últimos 7 días (conteo real agrupado por fecha) ---- */
   const distribucion = Array.from({ length: 7 }, (_, i) => {
     const fecha = FechaISO(new Date(reloj.getTime() - (6 - i) * 24 * 60 * 60 * 1000))
     const indiceDia = new Date(`${fecha}T00:00:00`).getDay()
@@ -612,7 +498,6 @@ export default function CitasAdmin() {
   const maxDia = Math.max(...distribucion.map((d) => d.total), 1)
   const promedioDiario = citasSemana.length > 0 ? (citasSemana.length / 7).toFixed(1) : '0.0'
 
-  /* ---- Filtrado ---- */
   const citasDelDia = citas.filter((c) => c.fecha === fechaSeleccionada)
   const citasBase = citasDelDia.filter((c) => {
     if (!barberoFiltro) return true
@@ -620,12 +505,40 @@ export default function CitasAdmin() {
     return c.barbero_id === barberoFiltro
   })
 
-  // Los conteos de las pestañas se calculan sobre el set ya filtrado por fecha y
-  // barbero, para que el número que se ve sea el número que se va a ver.
+  // Conteos sobre el set ya filtrado: coinciden con lo que muestra la tabla.
   const conteos = { todas: citasBase.length, pendiente: 0, confirmada: 0, completada: 0, cancelada: 0 }
   citasBase.forEach((c) => { conteos[estadoDe(c)] = (conteos[estadoDe(c)] || 0) + 1 })
 
   const citasFiltradas = citasBase.filter((c) => tab === 'todas' || estadoDe(c) === tab)
+
+  const bloques = bloquesDeConfig(configuracion)
+  const diasCerrados = diasCerradosDeConfig(configuracion)
+  const fechaCerrada = diasCerrados.includes(new Date(`${fechaSeleccionada}T00:00:00`).getDay())
+  const barberosActivos = barberos.filter((b) => b.disponible !== false)
+  const tieneSinAsignar = citasDelDia.some((c) => !c.barbero_id)
+  const columnasCalendario = [
+    ...barberosActivos,
+    ...(tieneSinAsignar ? [{ id: null, nombre: 'Sin asignar' }] : []),
+  ]
+  const todasLasHoras = bloques.flatMap((b) => b.horas)
+
+  const citaEnCelda = (hora, barberoId) =>
+    citasDelDia.find((c) => c.hora === hora && c.barbero_id === barberoId)
+
+  const abrirDesdeCalendario = (hora, barberoId) => {
+    setCitaEditando({
+      fecha: fechaSeleccionada,
+      hora,
+      barbero_id: barberoId || null,
+      nombre: '',
+      telefono: '',
+      correo: '',
+      servicio: '',
+      total: '',
+      notas: '',
+    })
+    setMostrarForm(true)
+  }
 
   const totalPaginas = Math.max(1, Math.ceil(citasFiltradas.length / ITEMS_POR_PAGINA))
   const paginadas = citasFiltradas.slice((pagina - 1) * ITEMS_POR_PAGINA, pagina * ITEMS_POR_PAGINA)
@@ -648,10 +561,8 @@ export default function CitasAdmin() {
 
   if (cargando) return <p className="text-slate-500">Cargando...</p>
 
-  /* ---- Acciones rápidas por estado ---- */
   const accionesDe = (cita) => {
-    // El recordatorio solo aparece en citas vivas y no pasadas (esRecordable), y
-    // va primero para que se vea sin desplazamiento.
+    // El recordatorio va primero: solo en citas vivas y no pasadas.
     const puedeRecordar = esRecordable(cita)
     const yaRecordada = recordada(cita)
     const accionRecordar = {
@@ -671,9 +582,7 @@ export default function CitasAdmin() {
             etiqueta: 'Recontactar',
             clase: 'neutro',
             icono: <IconoTelefono />,
-            // PENDIENTE: este botón marca el número en el teléfono. El envío de
-            // plantilla por WhatsApp depende del servicio de mensajería (§ tarjeta
-            // de recordatorios), todavía inexistente.
+            // PENDIENTE: solo marca el teléfono; falta integración de mensajería.
             accion: () => window.open(`tel:${cita.telefono}`, '_self'),
           },
           {
@@ -708,9 +617,7 @@ export default function CitasAdmin() {
             etiqueta: 'Cobrar',
             clase: 'neutro',
             icono: <IconoCobrar />,
-            // PENDIENTE: `citas` no tiene columnas de pago (`pagado`, `metodo_pago`),
-            // así que "Cobrar" cierra la cita como completada. Cuando exista el
-            // registro de cobro, esta acción pasa a escribirlo.
+            // PENDIENTE: sin columnas de pago, "Cobrar" cierra como completada.
             accion: () => {
               const monto = cita.total ? ` de $${cita.total} MXN` : ''
               if (!confirm(`¿Registrar el cobro${monto} y cerrar la cita?`)) return
@@ -753,9 +660,6 @@ export default function CitasAdmin() {
 
   return (
     <div>
-      {/* ==========================================================
-          SECCIÓN 1 · HEADER
-          ========================================================== */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-amber">
@@ -777,9 +681,6 @@ export default function CitasAdmin() {
         </div>
       </div>
 
-      {/* ==========================================================
-          SECCIÓN 2 · MÉTRICAS
-          ========================================================== */}
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
         {/* Total histórico */}
         <div className="rounded-xl border border-slate-200 bg-white p-5">
@@ -846,9 +747,6 @@ export default function CitasAdmin() {
         </div>
       </div>
 
-      {/* ==========================================================
-          SECCIÓN 3 · CONTROLES DE LA TABLA
-          ========================================================== */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
         {/* Navegador de fecha */}
         <div className="flex items-center gap-1">
@@ -928,35 +826,79 @@ export default function CitasAdmin() {
         </p>
       )}
 
-      {/* ==========================================================
-          SECCIÓN 4 · TABLA DE CITAS
-          ========================================================== */}
       {vista === 'calendario' ? (
-        /* PENDIENTE: vista calendario. La pestaña ya es navegable, pero la línea de
-           tiempo por hora no tiene lógica todavía. Requiere, además, revisar
-           solapamientos de horario (hoy nada impide reservar dos citas en el
-           mismo slot). */
-        <div className="rounded-xl border border-slate-200 bg-white px-5 py-16 text-center">
-          <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-primary-50 text-primary">
-            <IconoParrilla />
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          {fechaCerrada && (
+            <div className="p-5 rounded-lg border border-amber-200 bg-amber-50">
+              <p className="text-sm font-medium text-amber-800">
+                Día cerrado según configuración: {etiquetaFecha(fechaSeleccionada)}
+              </p>
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-full">
+              <thead className="border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate">
+                    Hora
+                  </th>
+                  {columnasCalendario.map((col) => (
+                    <th
+                      key={col.id ?? 'sin-asignar'}
+                      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate min-w-[140px]"
+                    >
+                      {col.nombre}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {todasLasHoras.map((hora) => (
+                  <tr key={hora} className="border-b border-slate-100 last:border-0">
+                    <td className="px-4 py-3 font-serif text-sm tabular-nums text-navy">
+                      {formato12h(hora)}
+                    </td>
+                    {columnasCalendario.map((col) => {
+                      const cita = citaEnCelda(hora, col.id)
+                      return (
+                        <td key={col.id ?? 'sin-asignar'} className="px-4 py-3">
+                          {fechaCerrada ? null : cita ? (
+                            <div className="p-2 rounded border border-slate-200 bg-slate-50">
+                              <p className="text-xs font-medium text-navy">{cita.nombre}</p>
+                              <p className="text-[10px] text-slate">
+                                {cita.servicio} · {duracionTotalCita(cita, servicios)} min
+                              </p>
+                              <span
+                                className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${BADGE_ESTADO[cita.estado || 'pendiente']}`}
+                              >
+                                {ETIQUETA_ESTADO[cita.estado || 'pendiente']}
+                              </span>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => abrirDesdeCalendario(hora, col.id)}
+                              className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-navy transition-colors hover:bg-slate-100 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                            >
+                              + Agendar
+                            </button>
+                          )}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <h2 className="font-serif text-lg text-navy">Vista Calendario</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm text-slate">
-            Próximamente: rejilla de franjas horarias con la duración real de cada servicio,
-            una columna por barbero y el conflicto de agenda detectado.
-          </p>
-          <ul className="mx-auto mt-5 max-w-sm space-y-1.5 text-left text-sm text-slate">
-            <li className="flex items-start gap-2"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" />Franjas por hora en la rejilla</li>
-            <li className="flex items-start gap-2"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" />Bloqueos por mantenimiento y descansos</li>
-            <li className="flex items-start gap-2"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" />Aviso de solapamiento al reservar</li>
-          </ul>
-          <button
-            onClick={() => setVista('lista')}
-            className="mt-6 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            <IconoLista />
-            Volver a la lista detallada
-          </button>
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={() => setVista('lista')}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <IconoLista />
+              Volver a la lista detallada
+            </button>
+          </div>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -1055,8 +997,7 @@ export default function CitasAdmin() {
                     const barbero = barberoPorId(c.barbero_id)
                     const productosDeLaCita = productosCita(c)
                     const enCurso = estaEnCurso(c)
-                    // Primera visita: ninguna otra cita del mismo teléfono agendada
-                    // antes que esta (mismo día, pero más temprano, cuenta como previa).
+                    // Primera visita: ninguna cita anterior del mismo teléfono.
                     const primeraVisita = !citas.some((otra) =>
                       otra.id !== c.id &&
                       otra.telefono === c.telefono &&
@@ -1101,6 +1042,11 @@ export default function CitasAdmin() {
                               {primeraVisita && (
                                 <span className="mt-1 inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber">
                                   Primera visita
+                                </span>
+                              )}
+                              {c.cliente_id && (
+                                <span className="mt-1 inline-block text-[10px] font-semibold uppercase tracking-wide text-primary">
+                                  Cuenta vinculada
                                 </span>
                               )}
                             </div>
@@ -1230,11 +1176,7 @@ export default function CitasAdmin() {
         </div>
       )}
 
-      {/* ==========================================================
-          SECCIÓN 5 · DISTRIBUCIÓN SEMANAL Y RECORDATORIOS
-          ========================================================== */}
       <div className="mt-6 grid gap-4 md:grid-cols-2">
-        {/* 5.1 Distribución semanal */}
         <div className="rounded-xl border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-5 py-4">
             <h3 className="font-serif text-base text-navy">Distribución Semanal</h3>
@@ -1268,20 +1210,9 @@ export default function CitasAdmin() {
           </div>
         </div>
 
-        {/* 5.2 Recordatorios */}
-        {/* Hay TRES canales, y son independientes:
-             · CORREO AUTOMÁTICO: la Edge Function `enviar-recordatorios` envía un
-               correo 24 h y otro 2 h antes de la cita y marca sus columnas
-               (`recordatorio_24h_enviado_at`, `recordatorio_2h_enviado_at`).
-             · WHATSAPP AUTOMÁTICO: la `enviar-whatsapp` hace lo mismo por WhatsApp
-               y marca `recordatorio_wa_24h_enviado_at` y
-               `recordatorio_wa_2h_enviado_at`, en ventanas propias.
-               Los dos los manda pg_cron y los para su interruptor.
-             · WHATSAPP MANUAL: el botón abre WhatsApp con el mensaje listo y
-               marca `recordatorio_enviado_at`. Lo hace el barbero, cuando quiere.
-             Enviar por un canal no silencia a los otros: cada uno filtra por sus
-             propias columnas. El manual es el respaldo cuando un automático no
-             llega (sin correo o sin teléfono, fallo del proveedor, plantillas). */}
+        {/* Tres canales independientes: correo y WhatsApp automáticos los manda
+            pg_cron (cada uno marca sus columnas); el WhatsApp manual lo dispara
+            el barbero. Enviar por uno no silencia a los otros. */}
         <div className="rounded-xl border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-5 py-4">
             <h3 className="font-serif text-base text-navy">Recordatorios</h3>
@@ -1291,13 +1222,8 @@ export default function CitasAdmin() {
             </p>
           </div>
           <div className="px-5 py-5">
-            {/* Los dos canales automáticos. Van en dos columnas desde `sm` porque son
-                la misma decisión tomada dos veces (encender / apagar el envío),
-                no dos pasos: leerlos de un vistazo es el punto. Debajo de cada
-                interruptor va su ayuda, y el de WhatsApp avisa del costo por
-                mensaje, que es la duda real de quien lo enciende. Los dos se
-                apagan mientras carga la fila, mientras escriben y si la
-                barbería no tiene configuración que actualizar. */}
+            {/* Misma decisión dos veces: van juntos y se bloquean al cargar,
+                al escribir o si no hay fila de configuración. */}
             <div className="mb-5 grid gap-3 sm:grid-cols-2">
               <InterruptorCanal
                 etiqueta="Envío automático"

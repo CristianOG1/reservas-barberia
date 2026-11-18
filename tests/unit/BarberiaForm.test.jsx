@@ -1,14 +1,5 @@
-// tests/unit/BarberiaForm.test.jsx
-// Modal de alta y edición de una barbería en el panel del proveedor.
-//
-// Matriz v3: F-16 «Crear una barbería junto con la cuenta de su dueño». Sus
-// dos casos: CP-16-01 (alta con nombre y slug válido, con la cuenta de su
-// dueño) y CP-16-02 (slug reservado o con formato inválido, rechazado con el
-// motivo).
-//
-// ⚠ La numeración de los casos sigue a la **matriz v3**: F-16 → CP-16-01/02.
-// El archivo `Casos_de_Prueba.md` de la bóveda todavía trae la numeración
-// anterior, donde estos mismos casos son CP-14-01/CP-14-02.
+// Alta y edición de barberías (F-16: CP-16-01/02). La numeración sigue la matriz v3;
+// `Casos_de_Prueba.md` aún trae la anterior (CP-14-01/02).
 
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
@@ -17,7 +8,6 @@ import { supabaseMock } from '../mocks/supabaseClient'
 import { renderWithProviders } from '../helpers/renderWithProviders'
 import BarberiaForm from '../../src/pages/superadmin/BarberiaForm'
 
-/** Monta el modal de alta (sin `barberia`) o de edición. */
 function montar({ barberia = null, onGuardado } = {}) {
   return renderWithProviders(
     <BarberiaForm
@@ -29,7 +19,6 @@ function montar({ barberia = null, onGuardado } = {}) {
   )
 }
 
-/** Devuelve la llamada a la Edge Function. */
 function llamadaFuncion() {
   return supabaseMock.llamadas.find((c) => c.tipo === 'functions.invoke')
 }
@@ -143,9 +132,7 @@ describe('BarberiaForm · slug inválido (F-16)', () => {
     const user = userEvent.setup()
     montar()
 
-    // El navegador solo exige que el campo no esté vacío: un nombre de solo
-    // espacios pasa su validación y llega al aviso de la aplicación. (El slug
-    // se escribe a mano porque si no, con el nombre en blanco, saldría vacío.)
+    // El navegador acepta solo espacios; el aviso es de la app. El slug se escribe a mano para que no salga vacío.
     await user.type(screen.getByLabelText('Nombre del negocio *'), '   ')
     await user.clear(screen.getByLabelText('Slug *'))
     await user.type(screen.getByLabelText('Slug *'), 'barberia')
@@ -167,8 +154,7 @@ describe('BarberiaForm · correo y contraseña (F-16)', () => {
     montar()
 
     await user.type(screen.getByLabelText('Nombre del negocio *'), 'Barbería El Buen Corte')
-    // El navegador acepta este correo (su dominio no necesita punto), pero la
-    // aplicación exige un dominio con punto: aquí sí es la app la que avisa.
+    // El navegador acepta el correo sin punto en el dominio; la validación de la app lo rechaza.
     await user.type(screen.getByLabelText('Correo del dueño *'), 'dueno@ejemplo')
     await user.type(screen.getByLabelText('Contraseña temporal *'), 'Demo1234!')
     await user.click(screen.getByRole('button', { name: 'Crear barbería' }))
@@ -323,8 +309,7 @@ describe('BarberiaForm · edición (F-16)', () => {
     const user = userEvent.setup()
     montar({ barberia: BARBERIA })
 
-    // Solo espacios: el navegador lo acepta (el campo no está vacío) y el
-    // aviso es de la aplicación.
+    // Solo espacios: aviso de la app, no del navegador.
     await user.clear(screen.getByLabelText('Nombre del negocio *'))
     await user.type(screen.getByLabelText('Nombre del negocio *'), '   ')
     await user.click(screen.getByRole('button', { name: 'Guardar cambios' }))
@@ -334,7 +319,6 @@ describe('BarberiaForm · edición (F-16)', () => {
         'El nombre del negocio es obligatorio.'
       )
     })
-    // No se escribe nada.
     expect(
       supabaseMock.llamadas.find(
         (c) => c.tipo === 'query' && c.tabla === 'barberias' && c.operacion === 'update'
@@ -346,8 +330,7 @@ describe('BarberiaForm · edición (F-16)', () => {
 describe('BarberiaForm · huecos (F-16)', () => {
 
   it('F-16 · el texto de ayuda del slug enseña el dominio base real', async () => {
-    // El texto tenía el dominio ANTIGUO escrito a mano (tusoftware.com).
-    // Ahora sale de `VITE_DOMINIO_BASE`, el mismo que usa `BarberiasSuper`.
+    // El dominio viene de `VITE_DOMINIO_BASE` (antes `tusoftware.com` hardcodeado), igual que en `BarberiasSuper`.
     vi.stubEnv('VITE_DOMINIO_BASE', 'gools.com.mx')
     montar()
 

@@ -1,22 +1,5 @@
-// tests/helpers/integracion.js
-// Utilidades compartidas por las pruebas de INTEGRACION.
-//
-// Las pruebas hablan con un proyecto de Supabase REAL usando el MISMO cliente
-// que usa la aplicacion (supabase-js), de modo que lo que se comprueba es
-// exactamente lo que ve el navegador: las mismas politicas RLS, los mismos
-// indices y las mismas RPC.
-//
-// ⚠ POR QUE ESTE ARCHIVO NO ESTA EN `tests/integration/`
-//   `vitest.integration.config.js` usa `include: ['tests/integration/**']` y solo
-//   excluye `tests/integration/setup.js`: TODO archivo de esa carpeta se
-//   collected como archivo de pruebas, y un archivo sin `describe` falla con
-//   «No test suite found». Por eso los helpers viven aqui, en `tests/helpers/`.
-//
-// ⚠ SEGURIDAD
-//   - El guard de `tests/integration/setup.js` aborta si falta
-//     `TEST_SUPABASE_URL` o si apunta a produccion. Este archivo NO lo
-//     sustituye: solo lee las variables ya validadas por el guard.
-//   - Las claves NO se imprimen, NO se registran y NO se devuelven.
+// Utilidades de las pruebas de integración: Supabase real con el mismo cliente de la app (RLS, índices y RPC).
+// Viven en helpers/ porque el config recolecta todo archivo de integration/; el guard de setup.js valida la URL y las claves no se imprimen.
 
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
@@ -24,22 +7,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-/* ============================================================
- *  MARCAS E IDENTIFICADORES DEL SEED
- *  ============================================================ */
-
-/**
- * Prefijo de TODO lo que crean las pruebas. Cada PRUEBA tiene ademas su propia
- * marca (unica), y la limpieza solo toca las filas de esa marca: los archivos
- * de pruebas corren EN PARALELO y una limpieza global se comia las filas del
- * archivo vecino.
- */
+// Prefijo de todo lo que crean las pruebas; cada prueba añade su marca y la limpieza solo toca la suya (archivos en paralelo).
 export const PREFIJO = 'int_prueba'
 
-/** Contrasena de las cuentas del seed (`database/seed.sql`). Es ficticia. */
+// Contrasena ficticia del seed (`database/seed.sql`).
 export const PASSWORD_SEED = 'Demo1234!'
 
-/** Las cuatro cuentas del seed y su papel. */
 export const USUARIOS = {
   proveedor: 'proveedor@ejemplo.com',      // superadmin
   dueno: 'dueno@ejemplo.com',              // admin de la barberia A
@@ -47,29 +20,23 @@ export const USUARIOS = {
   cliente: 'cliente@ejemplo.com',          // cliente
 }
 
-/** Barberias del seed (`database/seed.sql`). */
 export const BARBERIA_A = '11111111-1111-1111-1111-111111111111'  // Salon Demo (activa)
 export const BARBERIA_B = '22222222-2222-2222-2222-222222222222'  // Barberia Norte Ficticia (activa)
 
-/** Ids de los usuarios del seed en `auth.users`. */
+// Ids en auth.users.
 export const DUENO_ID = '88888888-8888-8888-8888-888888888888'
 export const CLIENTE_ID = '33333333-3333-3333-3333-333333333333'
 
-/** Cita publica del seed: NO tiene `cliente_id`, asi que no es de nadie. */
+// Cita publica del seed: sin `cliente_id`, no es de nadie.
 export const CITA_DE_OTRO = 'd3333333-3333-3333-3333-333333333333'
 
-/** Servicio del seed que pertenece a la barberia B. */
 export const SERVICIO_DE_B = 'a4444444-4444-4444-4444-444444444444'
 
-/** Barberos del seed de la barberia A (los dos estan disponibles). */
+// Barberos del seed de la barberia A (ambos disponibles).
 export const BARBERO_A_1 = 'c1111111-1111-1111-1111-111111111111'
 export const BARBERO_A_2 = 'c2222222-2222-2222-2222-222222222222'
 
-/* ============================================================
- *  VARIABLES DE ENTORNO
- *  ============================================================ */
-
-/** Lee una variable de entorno tolerando valores ausentes o la cadena 'undefined'. */
+// Lee una variable de entorno tolerando valores ausentes o la cadena 'undefined'.
 function leer(nombre) {
   const bruto = process.env[nombre]
   if (bruto === undefined || bruto === null) return ''
@@ -81,12 +48,12 @@ export function urlPruebas() {
   return leer('TEST_SUPABASE_URL').replace(/\/+$/, '')
 }
 
-/** La clave publicable del proyecto de pruebas. */
+// Clave publicable del proyecto de pruebas.
 export function claveAnon() {
   return leer('TEST_SUPABASE_ANON_KEY')
 }
 
-/** La clave `service_role`. Solo existe si el proyecto la ha compartido. */
+// La `service_role` solo existe si el proyecto la ha compartido.
 export function claveServiceRole() {
   return leer('TEST_SUPABASE_SERVICE_ROLE_KEY')
 }
@@ -99,36 +66,18 @@ export function hayServiceRole() {
   return Boolean(urlPruebas()) && Boolean(claveServiceRole())
 }
 
-/** Motivo por el que se saltan las pruebas que tocan `auth.users`. */
 export const MOTIVO_SIN_SERVICE_ROLE =
   'se salta: requiere TEST_SUPABASE_SERVICE_ROLE_KEY (crea y borra usuarios en auth.users)'
 
-/* ============================================================
- *  CLIENTES
- *  ============================================================ */
-
-/** Cliente de Supabase. En node no se persiste la sesion en disco. */
+// En node no se persiste la sesión en disco.
 export function crearCliente(clave = claveAnon()) {
   return createClient(urlPruebas(), clave, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   })
 }
 
-/* ------------------------------------------------------------
- *  CACHE DE SESIONES
- *
- *  El endpoint de inicio de sesion de Supabase tiene un limite de peticiones
- *  (por IP): con los archivos de pruebas en paralelo, empezar sesion una vez
- *  por archivo y por cuenta lo agota («Request rate limit reached»).
- *
- *  Asi que las sesiones se cachean en el directorio temporal del sistema
- *  (NO en el repo), con una hora de validez, y se reutilizan entre archivos y
- *  entre ejecuciones. Un archivo de bloqueo (`wx`) hace que solo un proceso
- *  inicie sesion a la vez y los demas esperen al resultado.
- *
- *  ⚠ El archivo contiene tokens de sesion: vive en el temporal, caduca solo y
- *    no se imprime nunca.
- *  ------------------------------------------------------------ */
+// El login limita peticiones por IP: con archivos en paralelo, las sesiones se cachean
+// en el temporal del sistema (1 h, lock `wx`, tokens nunca impresos), no en el repo.
 
 const RUTA_CACHE = path.join(os.tmpdir(), 'barberweb-integracion-sesiones.json')
 const RUTA_LOCK = path.join(os.tmpdir(), 'barberweb-integracion-sesiones.lock')
@@ -152,7 +101,6 @@ function guardarCache(cache) {
   }
 }
 
-/** El token guardado para una cuenta, si sigue vivo. */
 function tokenEnCache(cache, correo) {
   const guardado = cache[urlPruebas()]?.[correo]
   if (!guardado) return null
@@ -160,7 +108,6 @@ function tokenEnCache(cache, correo) {
   return guardado
 }
 
-/** Coge el bloqueo de la cache. Devuelve false si otro proceso lo tiene. */
 function cogerLock() {
   try {
     const fd = fs.openSync(RUTA_LOCK, 'wx')
@@ -191,12 +138,10 @@ function soltarLock() {
   }
 }
 
-/** Cliente con la sesion de una cuenta del seed ya iniciada. */
 export async function clienteComo(correo) {
   const cliente = crearCliente()
   const cache = leerCache()
 
-  // 1) ¿Hay una sesion viva en la cache?
   const guardado = tokenEnCache(cache, correo)
   if (guardado) {
     const { error } = await cliente.auth.setSession({
@@ -206,11 +151,7 @@ export async function clienteComo(correo) {
     if (!error) return cliente
   }
 
-  // 2) Iniciar sesion de verdad, pero solo uno a la vez.
-  //    La espera se acota a ~20 s: el hookTimeout del config es de 30 s y
-  //    pasarse haria saltar la suite entera en un arranque en frío. Si se
-  //    acaba la espera, se intenta el inicio de sesion directo (peor caso:
-  //    un «Request rate limit reached», igual que sin cache).
+  // Inicio de sesión serializado; la espera se acota a ~20 s para no superar el hookTimeout de 30 s.
   if (!cogerLock()) {
     for (let intento = 0; intento < 40; intento += 1) {
       await esperar(500)
@@ -253,16 +194,7 @@ export async function clienteComo(correo) {
   }
 }
 
-/**
- * Abre una sesion por cada papel del seed.
- *
- * - `anon`       sin sesion (la clave publicable).
- * - `dueno`      admin de la barberia A.
- * - `duenoNorte` admin de la barberia B.
- * - `cliente`    cliente del portal.
- * - `proveedor`  superadmin (ve y escribe en todas).
- * - `service`    service_role, o `null` si no se ha compartido la clave.
- */
+// `anon` sin sesión; `dueno`/`duenoNorte` admins A/B; `cliente`; `proveedor` superadmin; `service` puede ser null.
 export async function abrirSesiones() {
   const [dueno, duenoNorte, cliente, proveedor] = await Promise.all([
     clienteComo(USUARIOS.dueno),
@@ -281,22 +213,12 @@ export async function abrirSesiones() {
   }
 }
 
-/* ============================================================
- *  DATOS DE PRUEBA
- *  ============================================================ */
-
-/**
- * Marca unica de una PRUEBA. Todas las filas que cree esa prueba la llevan y
- * la limpieza solo busca por ella.
- */
+// Marca única de cada prueba: la llevan todas sus filas y la limpieza solo busca por ella.
 export function nuevaMarca() {
   return `${PREFIJO}-${randomUUID().slice(0, 8)}`
 }
 
-/**
- * Una cita de prueba. Todas las pruebas que crean citas pasan por aqui, asi
- * que todas quedan marcadas y la limpieza las encuentra.
- */
+// Todas las citas de prueba pasan por aquí para quedar marcadas y ser limpiadas.
 export function citaDePrueba({ marca, barberiaId = BARBERIA_A, fecha, hora, ...resto } = {}) {
   return {
     nombre: 'int_prueba',
@@ -311,15 +233,10 @@ export function citaDePrueba({ marca, barberiaId = BARBERIA_A, fecha, hora, ...r
   }
 }
 
-/**
- * Crea una barberia de prueba (la usan las pruebas de RLS y de reglas).
- * El superadmin es el unico que puede crear barberias.
- */
+// El superadmin es el único que puede crear barberías.
 export async function crearBarberiaDePrueba(proveedor, { marca, activa = true } = {}) {
   const id = marca || nuevaMarca()
-  // El slug no puede llevar el prefijo tal cual: el CHECK barberias_slug_valido
-  // exige ^[a-z0-9]+(-[a-z0-9]+)*$ (sin guion bajo) y de 3 a 40 caracteres. El
-  // nombre (que si es libre) conserva la marca, que es la que usa la limpieza.
+  // El CHECK exige ^[a-z0-9]+(-[a-z0-9]+)*$ (sin '_', 3-40); el nombre libre conserva la marca para limpiar.
   const slug = 'b' + id.replace(/[^0-9a-f]/g, '')
   const { data, error } = await proveedor
     .from('barberias')
@@ -338,22 +255,12 @@ export async function crearBarberiaDePrueba(proveedor, { marca, activa = true } 
   return data
 }
 
-/* ============================================================
- *  LIMPIEZA
- *  ============================================================ */
-
-/**
- * Borra lo que ha creado UNA prueba: las filas con su marca. No toca el seed
- * ni las filas de las pruebas que corren en paralelo.
- *
- * Usa el superadmin porque es el unico rol que puede escribir en todas las
- * barberias.
- */
+// Borra solo las filas de una marca (ni seed ni pruebas paralelas), con el superadmin:
+// es el único rol que escribe en todas las barberías.
 export async function limpiar(sesiones, marca) {
   if (!sesiones || !marca) return
   const superadmin = sesiones.proveedor
 
-  // Barberias de prueba y todo lo que cuelgue de ellas.
   const { data: barbs } = await superadmin
     .from('barberias')
     .select('id')
@@ -368,31 +275,18 @@ export async function limpiar(sesiones, marca) {
     await superadmin.from('barberias').delete().eq('id', b.id)
   }
 
-  // Citas y servicios sueltos (los que se crean en la barberia del seed).
   await superadmin.from('citas').delete().like('notas', `${marca}%`)
   await superadmin.from('servicios').delete().like('descripcion', `${marca}%`)
 }
 
-/* ============================================================
- *  FRANJAS
- *  ============================================================ */
-
-/**
- * Sufijo unico por ARCHIVO de pruebas. Cada archivo tiene su propia copia de
- * este modulo, asi que cada uno recibe un sufijo distinto: dos archivos nunca
- * usan la misma franja aunque se crucen las fechas.
- */
+// Sufijo único por archivo: cada uno carga su propia copia del módulo, así dos pruebas
+// en paralelo no piden la misma franja aunque coincidan las fechas.
 const SUFIJO_ARCHIVO = randomUUID().replace(/-/g, '').slice(0, 6)
 
 const dosDigitos = (n) => String(n).padStart(2, '0')
 
-/**
- * Una franja libre ('YYYY-MM-DD' + 'HH:MM:SS') para una prueba.
- *
- * - La fecha es de 2099 (el seed usa `current_date + N`).
- * - La hora depende del archivo y del numero de prueba, para que dos pruebas
- *   que corren a la vez no pidan la misma franja.
- */
+// Franja libre: la fecha la pasa el test (2099, fuera del seed) y la hora depende del archivo
+// y del número de prueba para no colisionar entre pruebas simultáneas.
 export function franja(fecha, numero) {
   const base = parseInt(SUFIJO_ARCHIVO.slice(0, 2), 16) % 20
   const horas = (base + numero) % 24
@@ -404,10 +298,7 @@ export function franja(fecha, numero) {
   }
 }
 
-/**
- * Una fecha de 2099 (aleatoria) para no chocar con el seed. Las citas del seed
- * son de `current_date + N`.
- */
+// Fecha aleatoria de 2099: el seed usa `current_date + N`.
 export function fechaDePrueba() {
   const mes = String(1 + Math.floor(Math.random() * 12)).padStart(2, '0')
   const dia = String(1 + Math.floor(Math.random() * 28)).padStart(2, '0')

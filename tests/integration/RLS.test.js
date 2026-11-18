@@ -1,13 +1,5 @@
-// tests/integration/RLS.test.js
-// Aislamiento por barberia y por rol, comprobado contra la base REAL.
-//
-// Matriz v3:
-//   F-05 «Reservar una cita» (la reserva publica solo en barberias activas)
-//   F-07 «Consultar las citas propias y el historial» (un cliente solo ve las suyas)
-//   F-08 «Gestionar la agenda de citas y el resumen del salon» (un administrador
-//        no puede tocar las de otra barberia)
-//   F-14 «Operar con varias sucursales desde una sola cuenta» (las membresias
-//        no se escriben desde la app)
+// Aislamiento por barbería y por rol contra la base REAL (F-05, F-07, F-08, F-14).
+// Un cliente solo ve sus citas; un admin no toca otra barbería; las membresías no se escriben desde la app.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -29,8 +21,7 @@ import {
 const FECHA = fechaDePrueba()
 
 let sesiones = null
-// Cada PRUEBA tiene su propia marca: los archivos corren en paralelo y una
-// limpieza global se comia las filas del archivo vecino.
+// Cada prueba tiene su marca: los archivos corren en paralelo y una limpieza global borraba las filas ajenas.
 let marca = null
 
 beforeAll(async () => {
@@ -68,11 +59,8 @@ describe.skipIf(!hayClaveAnon())('RLS · aislamiento por barberia', () => {
     expect(data).toBeNull()
   })
 
-  // ⚠ FALLA A PROPOSITO. El catalogo de `servicios` se lee con `using (true)`
-  // (deuda #60 de AGENTS.md): RLS no puede ver el subdominio, asi que el
-  // catalogo es publico y el frontend lo filtra por `barberia_id`. Que un admin
-  // de A vea el catalogo de B NO es un fallo de seguridad (son datos publicos:
-  // nombre, precio y foto), pero la cuenta del cliente solo ve SUS citas.
+  // ⚠ FALLA A PROPOSITO: `servicios` usa `using (true)` (deuda #60). RLS no ve el subdominio;
+  // el catálogo es público (nombre, precio, foto) y el frontend filtra. Las citas sí son privadas.
   it.fails('INT-02 · F-08 · el admin de A no ve los servicios de B (count = 0)', async () => {
     const { count } = await sesiones.dueno
       .from('servicios')
@@ -205,8 +193,7 @@ describe.skipIf(!hayClaveAnon())('RLS · el cliente solo ve sus citas', () => {
   })
 
   it('INT-08 · F-14 · el cliente no puede insertar en membresias', async () => {
-    // La barberia B es la que NO tiene membresia: si el INSERT pasara, no
-    // chocaria con la clave primaria y el error seria el de verdad.
+    // B no tiene membresía: si el INSERT pasara, el error no sería el de la PK.
     const { error } = await sesiones.cliente
       .from('membresias')
       .insert({ user_id: CLIENTE_ID, barberia_id: BARBERIA_B })
@@ -240,14 +227,8 @@ describe.skipIf(!hayClaveAnon())('RLS · la reserva publica solo en barberias ac
     expect(count).toBe(0)
   })
 
-  // ⚠ FALLA A PROPOSITO. El proyecto de PRUEBAS no tiene la politica
-  // «Cualquiera puede agendar» (si esta en produccion: `insert to
-  // anon, authenticated` con `exists (select 1 from barberias b where
-  // b.id = citas.barberia_id and b.activa)`), asi que ni anon ni el cliente
-  // pueden registrar una cita. Es una DIFERENCIA entre el proyecto de pruebas
-  // y produccion, no un fallo del codigo: en produccion la reserva publica si
-  // funciona. Se deja como `it.fails` hasta que el proyecto de pruebas se
-  // actualice con `database/schema.sql`.
+  // ⚠ FALLA A PROPOSITO: al proyecto de PRUEBAS le falta «Cualquiera puede agendar»
+  // (`insert to anon, authenticated` + `barberias.activa`), que sí está en producción; `it.fails` hasta aplicar `database/schema.sql`.
   it.fails('INT-10 · F-05 · anon si puede insertar citas en una barberia activa', async () => {
     const { data, error } = await sesiones.anon
       .from('citas')

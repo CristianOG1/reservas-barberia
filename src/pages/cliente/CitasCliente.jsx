@@ -2,17 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/useAuth'
 import { useBarberia } from '../../context/useBarberia'
+import { useConfiguracion } from '../../context/useConfiguracion'
 import { supabase } from '../../supabaseClient'
 import { FechaISO, aDate, formatearFecha, formato12h, recortarHora } from '../../utils/fecha'
+import { bloquesDeConfig, diasCerradosDeConfig } from '../../utils/citas'
 
 // Mismos turnos que BookingPage. Horas en 24 h; el AM/PM es solo visual.
-const BLOQUES = [
-  { titulo: 'Mañana', horas: ['10:00', '11:00', '11:50', '12:40'] },
-  { titulo: 'Tarde', horas: ['14:30', '15:20', '16:00', '17:30'] },
-  { titulo: 'Noche', horas: ['18:30'] },
-]
-
-const estilosEstado = {
+const ESTILOS_ESTADO = {
   pendiente: 'bg-amber-100 text-amber-800',
   confirmada: 'bg-green-100 text-green-800',
   completada: 'bg-slate-200 text-slate-700',
@@ -47,6 +43,10 @@ export default function CitasCliente() {
   // cliente puede tener citas en más de una barbería.
   const { barberia } = useBarberia()
   const barberiaId = barberia?.id ?? null
+  // Configuración de la barbería: bloques de horario y días cerrados.
+  const { configuracion } = useConfiguracion()
+  const bloques = bloquesDeConfig(configuracion)
+  const diasCerrados = diasCerradosDeConfig(configuracion)
 
   const [citas, setCitas] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -66,15 +66,12 @@ export default function CitasCliente() {
   const hoy = FechaISO(reloj)
   const ahoraMin = reloj.getHours() * 60 + reloj.getMinutes()
 
-  /* ---- Cargar solo las citas del usuario logueado en ESTA barbería ----
-     RLS ya filtra por cliente_id; el .eq de barbería acota además a la
-     barbería del sitio abierto.
-     `barberos(nombre)` requiere que citas.barbero_id sea FK a barberos.id. */
+  // RLS filtra por cliente_id; el .eq acota además a la barbería del sitio abierto.
   const cargarCitas = useCallback(async () => {
     if (!userId || !barberiaId) return
     const { data, error } = await supabase
       .from('citas')
-      .select('id, fecha, hora, servicio, productos, total, estado, barbero_id, barberos(nombre)')
+      .select('id, fecha, hora, servicio, productos, total, estado, barbero_id, duracion_minutos, barberos(nombre)')
       .eq('cliente_id', userId)
       .eq('barberia_id', barberiaId)
       .order('fecha', { ascending: true })
@@ -95,12 +92,16 @@ export default function CitasCliente() {
     cargarCitas()
   }, [cargarCitas])
 
-  /* ---- Horas ocupadas en el modal de reagendar ---- */
   useEffect(() => {
     if (!citaReagendar || !nuevaFecha) return
     let vigente = true
     supabase
-      .rpc('horas_ocupadas', { fecha_consulta: nuevaFecha, barberia_id: barberiaId, barbero_id: citaReagendar.barbero_id || null })
+      .rpc('horas_ocupadas', {
+        fecha_consulta: nuevaFecha,
+        barberia_id: barberiaId,
+        barbero_id: citaReagendar.barbero_id || null,
+        duracion_consulta: citaReagendar.duracion_minutos || 30,
+      })
       .then(({ data, error }) => {
         if (!vigente) return
         if (error) console.error(error)
@@ -135,10 +136,10 @@ export default function CitasCliente() {
     setHorasOcupadas([])
   }
 
-  const esDomingo = nuevaFecha ? new Date(`${nuevaFecha}T00:00:00`).getDay() === 0 : false
+  const diaCerradoElegido = nuevaFecha ? diasCerrados.includes(new Date(`${nuevaFecha}T00:00:00`).getDay()) : false
 
   const horaDisponible = (h) => {
-    if (esDomingo || horasOcupadas.includes(h)) return false
+    if (diaCerradoElegido || horasOcupadas.includes(h)) return false
     if (nuevaFecha === hoy) {
       const [hh, mm] = h.split(':').map(Number)
       if (hh * 60 + mm <= ahoraMin) return false
@@ -177,8 +178,16 @@ export default function CitasCliente() {
         setNuevaHora(null)
         setError('Ese horario acaba de ser tomado, elige otro.')
         supabase
-          .rpc('horas_ocupadas', { fecha_consulta: nuevaFecha, barberia_id: barberiaId, barbero_id: citaReagendar.barbero_id || null })
+          .rpc('horas_ocupadas', {
+            fecha_consulta: nuevaFecha,
+            barberia_id: barberiaId,
+            barbero_id: citaReagendar.barbero_id || null,
+            duracion_consulta: citaReagendar.duracion_minutos || 30,
+          })
           .then(({ data }) => setHorasOcupadas((data || []).map((h) => recortarHora(h))))
+      } else if (String(error.message).includes('barbero_no_disponible')) {
+        setNuevaHora(null)
+        setError('Ese horario choca con otra cita de ese barbero. Elige otro.')
       } else {
         setError('No se pudo reagendar la cita. Intenta de nuevo.')
       }
@@ -239,7 +248,7 @@ export default function CitasCliente() {
                 <p className="text-sm font-semibold capitalize text-navy">{formatearFecha(cita.fecha)}</p>
                 <p className="text-sm text-slate">{formato12h(cita.hora)}</p>
               </div>
-              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${estilosEstado[cita.estado] || 'bg-slate-200 text-slate-700'}`}>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${ESTILOS_ESTADO[cita.estado] || 'bg-slate-200 text-slate-700'}`}>
                 {cita.estado}
               </span>
             </div>
@@ -322,10 +331,10 @@ export default function CitasCliente() {
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary-100"
             />
           </label>
-          {esDomingo && <p className="mt-2 text-sm text-amber-700">Los domingos permanecemos cerrados.</p>}
+          {diaCerradoElegido && <p className="mt-2 text-sm text-amber-700">Los domingos permanecemos cerrados.</p>}
 
           <div className="mt-4 space-y-3">
-            {BLOQUES.map((b) => (
+            {bloques.map((b) => (
               <div key={b.titulo}>
                 <p className="mb-1.5 text-xs text-slate">{b.titulo}</p>
                 <div className="flex flex-wrap gap-2">

@@ -71,7 +71,6 @@ export default function BarberoForm({ barbero, onClose, onGuardado }) {
         onSubmit={handleSubmit}
         className="flex max-h-[90vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
       >
-        {/* ===== Header del modal ===== */}
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-amber">Equipo del salón</p>
           <h3 className="font-serif text-lg text-navy">
@@ -82,7 +81,6 @@ export default function BarberoForm({ barbero, onClose, onGuardado }) {
           </p>
         </div>
 
-        {/* ===== Avatar ===== */}
         <div className="flex items-center gap-4">
           <img
             src={previewUrl || 'https://placehold.co/80x80?text=%20'}
@@ -101,7 +99,6 @@ export default function BarberoForm({ barbero, onClose, onGuardado }) {
           </label>
         </div>
 
-        {/* ===== Nombre ===== */}
         <div>
           <label htmlFor="nombre" className="block text-sm text-slate">Nombre *</label>
           <input
@@ -115,7 +112,6 @@ export default function BarberoForm({ barbero, onClose, onGuardado }) {
           />
         </div>
 
-        {/* ===== Especialidad ===== */}
         <div>
           <label htmlFor="especialidad" className="block text-sm text-slate">Especialidad</label>
           <input
@@ -128,10 +124,7 @@ export default function BarberoForm({ barbero, onClose, onGuardado }) {
           />
         </div>
 
-        {/* ===== Switch de disponibilidad: mismo control que en BarberosAdmin =====
-            La etiqueta es "Disponible para Citas" y no "Disponible desde que se
-            crea" porque este mismo control edita barberos ya existentes: con esa
-            otra redacción el texto miente al editar. */}
+        {/* Mismo switch que BarberosAdmin; la etiqueta sirve para alta y edición. */}
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3">
           <button
             type="button"
@@ -160,7 +153,6 @@ export default function BarberoForm({ barbero, onClose, onGuardado }) {
 
         {errorMsg && <p role="alert" className="text-sm text-red-600">{errorMsg}</p>}
 
-        {/* ===== Acciones ===== */}
         <div className="mt-2 flex gap-2">
           <button
             type="submit"

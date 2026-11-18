@@ -1,15 +1,5 @@
-// tests/integration/trigger-perfil.test.js
-// El trigger `trg_crear_perfil` sobre `auth.users` y la FK de `citas.cliente_id`.
-//
-// Matriz v3:
-//   F-01 «Acceder al sistema»: «el registro nunca asigna rol: todo alta nace
-//        como cliente».
-//   F-07 «Consultar las citas propias y el historial»: «una cita sin cliente_id
-//        no aparece porque no es atribuible a ninguna persona».
-//
-// ⚠ Estas pruebas tocan `auth.users`: necesitan la clave `service_role`, que
-// es un SECRETO. Si no esta definida, se saltan (y el motivo queda en el
-// nombre del caso). El resto de la suite NO necesita ese secreto.
+// El trigger `trg_crear_perfil` y la FK de `citas.cliente_id` (F-01, F-07).
+// Tocan `auth.users`: requieren `service_role` (SECRETO); si falta, se saltan. El resto de la suite no la necesita.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
@@ -29,8 +19,7 @@ import {
 const FECHA = fechaDePrueba()
 
 let sesiones = null
-// Cada PRUEBA tiene su propia marca: los archivos corren en paralelo y una
-// limpieza global se comia las filas del archivo vecino.
+// Cada prueba tiene su marca: los archivos corren en paralelo y una limpieza global borraba las filas ajenas.
 let marca = null
 const usuariosCreados = []
 
@@ -45,8 +34,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   if (sesiones) await limpiar(sesiones, marca)
-  // Los usuarios de prueba se borran aqui: son de `auth.users`, no del schema
-  // publico, y la limpieza normal no los alcanza.
+  // Se borran aquí: son de `auth.users`, fuera del schema público; la limpieza normal no los alcanza.
   if (sesiones?.service) {
     for (const id of usuariosCreados.splice(0)) {
       await sesiones.service.auth.admin.deleteUser(id)
@@ -54,7 +42,6 @@ afterEach(async () => {
   }
 })
 
-/** Crea un usuario de auth con los metadatos que se le pidan. */
 async function crearUsuario(metadatos) {
   const correo = `int_prueba-${randomUUID().slice(0, 8)}@ejemplo.com`
   const { data, error } = await sesiones.service.auth.admin.createUser({

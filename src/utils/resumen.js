@@ -1,17 +1,9 @@
 // src/utils/resumen.js
-// Calculos del resumen del panel (citas, personal e inventario). Sin
-// dependencias de React: se prueban sin renderizar nada.
-//
-// Todas las cifras que se muestran en el resumen salen de aqui, y TODAS parten
-// de datos reales de la barberia (filtrados por `barberia_id`). Si no hay
-// datos, el resultado es 0 o una lista vacia: nunca un numero de ejemplo.
+// Cálculos del resumen con datos reales de la barbería; sin dependencias de React.
 
-import { partirServicios } from './citas'
+import { partirServicios, bloquesDeConfig, diasCerradosDeConfig } from './citas'
 
-/**
- * Stock mínimo de un producto: por debajo (o justo en) este número hay que
- * reponer. Es el mismo umbral que usa el panel de productos.
- */
+// Umbral de reposición, el mismo que usa el panel de productos.
 export const STOCK_MINIMO = 5
 
 /** El stock de un producto, tratando el null como 0. */
@@ -48,22 +40,12 @@ export function citasDeHoy(citas, hoy) {
   return (citas || []).filter((c) => c.fecha === hoy)
 }
 
-/**
- * Cuantas citas tienen un estado. `citas.estado` es nullable en la base: una
- * cita sin estado esta 'pendiente'.
- */
+// `estado` es nullable en la BD: sin valor cuenta como 'pendiente'.
 export function contarPorEstado(citas, estado = 'pendiente') {
   return (citas || []).filter((c) => (c.estado || 'pendiente') === estado).length
 }
 
-/**
- * Los servicios mas solicitados de una lista de citas, con su porcentaje
- * sobre el total de sesiones.
- *
- * Una cita puede llevar varios servicios (el flujo publico permite seleccion
- * multiple), asi que se cuenta cada servicio por separado: el porcentaje es
- * sobre el total de sesiones, no sobre el numero de citas.
- */
+// Cada servicio cuenta por separado; el % es sobre sesiones, no sobre citas.
 export function topServicios(citas, limite = 3) {
   const cuentas = {}
   let total = 0
@@ -92,19 +74,12 @@ export function categoriasDeServicios(servicios) {
   return new Set((servicios || []).map((s) => s.categoria).filter(Boolean)).size
 }
 
-/**
- * Si un barbero puede recibir citas. `barberos.disponible` es nullable en la
- * base y su default es `true`, asi que un valor ausente cuenta como
- * disponible (la misma convencion que usa `BarberoForm`).
- */
+// `disponible` es nullable con default true: ausente cuenta como disponible.
 export function estaDisponible(barbero) {
   return barbero?.disponible ?? true
 }
 
-/**
- * Cuantos barberos pueden recibir citas. `barberos.disponible` es nullable en
- * la base: si no viene, se asume disponible (default de la columna).
- */
+// Barberos que pueden recibir citas (ausente = disponible).
 export function barberosDisponibles(barberos) {
   return (barberos || []).filter(estaDisponible).length
 }
@@ -112,4 +87,22 @@ export function barberosDisponibles(barberos) {
 /** Cuantos barberos estan en pausa (no pueden recibir citas). */
 export function barberosEnPausa(barberos) {
   return (barberos || []).length - barberosDisponibles(barberos)
+}
+
+// Ocupación = citas activas / (días abiertos × horas × barberos), acotado 0-100.
+export function porcentajeOcupacionSemanal(citasSemana, barberos, configuracion, hoy) {
+  void hoy // recibido por consistencia con la firma del resumen; las citas ya vienen filtradas por semana
+  const bloques = bloquesDeConfig(configuracion)
+  const diasCerrados = diasCerradosDeConfig(configuracion)
+  const totalHorasPorDia = bloques.reduce((acc, b) => acc + b.horas.length, 0)
+  const disponibles = Math.max(barberosDisponibles(barberos), 1)
+  const diasAbiertos = 7 - diasCerrados.length
+  const capacidadSemanal = diasAbiertos * totalHorasPorDia * disponibles
+
+  if (capacidadSemanal === 0) return 0
+
+  const citasActivas = (citasSemana || []).filter((c) => (c.estado || 'pendiente') !== 'cancelada')
+  const ocupacion = (citasActivas.length / capacidadSemanal) * 100
+
+  return Math.min(100, Math.max(0, Math.round(ocupacion)))
 }

@@ -3,19 +3,9 @@ import { supabase } from '../supabaseClient'
 import { BarberiaContext } from './barberia'
 import { resolverSlug } from '../utils/dominio'
 
-/* Dominio del software. Es una VARIABLE DE COMPILACIÓN (`VITE_DOMINIO_BASE`, §14.1),
-   no una constante: Vite la incrusta al compilar y así el mismo bundle vale para
-   el dominio real y para cualquier entorno de pruebas.
-   ⚠ La comparación es SIEMPRE contra este valor. **Nunca cuentes las partes del
-   host**: `gools.com.mx` tiene tres etiquetas (`gools`, `com`, `mx`) y una
-   barbería serían cuatro, pero `tusoftware.com` tenía dos y una eran tres. Un
-   conteo de partes funciona con un dominio y se rompe con el otro. */
-/* Resuelve qué barbería corresponde a este host. Devuelve `{ slug, sitioPrincipal }`:
-   - `slug` es el de la barbería abierta, o null si aquí no hay ninguna.
-   - `sitioPrincipal` es true cuando el host ES el software y no una barbería: el
-     dominio pelado, `www.`, un subdominio reservado o demasiados niveles. Ahí no
-     se debe caer a `VITE_BARBERIA_SLUG`: el sitio principal es la entrada del
-     superadmin, no el kiosko de la primera barbería de la lista. */
+// El slug se resuelve contra VITE_DOMINIO_BASE (variable de compilación): nunca
+// cuentes partes del host, gools.com.mx tiene 3 etiquetas. sitioPrincipal = el
+// dominio pelado, www. o reservado: entrada del superadmin, sin caer al slug por defecto.
 export function BarberiaProvider({ children }) {
   // El slug se resuelve una sola vez: no cambia mientras la página está abierta.
   const [{ slug, sitioPrincipal }] = useState(resolverSlug)

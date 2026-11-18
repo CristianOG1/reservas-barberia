@@ -1,13 +1,5 @@
-// tests/rendimiento/consultas.test.js
-//
-// Pruebas de rendimiento: tiempo de respuesta de consultas críticas contra
-// el proyecto de PRUEBAS de Supabase.
-//
-// Cada consulta se ejecuta N >= 10 veces y se reporta mediana, minimo, maximo
-// y p95. Los umbrales son holgados (mediana < 2000 ms): el objetivo es
-// establecer una línea base, no fallar por margen estrecho.
-//
-// Lee TEST_SUPABASE_URL y TEST_SUPABASE_PUBLISHABLE_KEY del entorno.
+// Rendimiento de consultas críticas contra el proyecto de PRUEBAS (≥10 repeticiones: mediana/mín/máx/p95).
+// Umbrales holgados (mediana < 2000 ms): es una línea base, no un test de margen estrecho. Lee TEST_* del entorno.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createClient } from '@supabase/supabase-js'
@@ -68,7 +60,6 @@ beforeAll(async () => {
   })
   if (!data?.session) throw new Error('No se pudo iniciar sesion como proveedor')
 
-  // Elegir una barberia de prueba con citas para las consultas
   const { data: barberias } = await supabase
     .from('barberias')
     .select('id')
@@ -82,7 +73,6 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  // Escribir resultados en el archivo de reporte
   const fs = await import('node:fs')
   const lineas = [
     '# Resultados de rendimiento · consultas',

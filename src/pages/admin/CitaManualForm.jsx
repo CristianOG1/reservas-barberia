@@ -6,7 +6,8 @@
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { useBarberia } from '../../context/useBarberia'
-import { validarObligatorios, validarTelefono } from '../../utils/validaciones'
+import { validarObligatorios } from '../../utils/validaciones'
+import { normalizarTelefono, validarTelefonoMexico } from '../../utils/citas'
 
 export default function CitaManualForm({ cita, servicios, barberos, onClose, onGuardado }) {
   const esEdicion = !!cita
@@ -32,7 +33,11 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
   // campo): la validación vive aquí y se muestra bajo cada campo.
   const [erroresCampos, setErroresCampos] = useState({})
 
-  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value })
+  // El teléfono se limpia al escribir: solo dígitos y 10 como máximo.
+  const handleChange = (e) => {
+    const { name, value } = e.target
+    setForm({ ...form, [name]: name === 'telefono' ? normalizarTelefono(value) : value })
+  }
 
   // Al elegir un servicio del catálogo se propone su precio. El campo sigue siendo
   // editable: el total real lo cobra el barbero en sucursal.
@@ -46,10 +51,7 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
     })
   }
 
-  /* ---- Validación de los datos ----
-     La regla del teléfono es la de `validarTelefono`, que reutiliza la de
-     `telefonoParaWhatsApp`: si el número no sirve para un WhatsApp, no
-     sirve para una cita. */
+  // Teléfono: misma regla que el flujo público (10 dígitos).
   const validarDatos = () => {
     const errores = validarObligatorios(form, {
       nombre: 'Escribe el nombre del cliente.',
@@ -59,7 +61,7 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
       hora: 'Elige la hora de la cita.',
     })
     const problemaTelefono = String(form.telefono ?? '').trim()
-      ? validarTelefono(form.telefono)
+      ? validarTelefonoMexico(form.telefono)
       : null
     if (problemaTelefono) errores.telefono = problemaTelefono
     return errores
@@ -90,10 +92,7 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
         notas: form.notas || null,
       }
 
-      // En alta manual la cita nace 'pendiente' de confirmar, igual que las que
-      // crea el flujo público. En edición NO se toca `estado`.
-      // La edición también va acotada por `barberia_id`: es defensa en
-      // profundidad (la RLS ya lo impide, AGENTS.md §10.5).
+      // Alta nace 'pendiente'; en edición no se toca estado. El .eq es defensa en profundidad.
       const peticion = esEdicion
         ? supabase.from('citas').update(payload).eq('id', cita.id).eq('barberia_id', barberiaId)
         : supabase.from('citas').insert([{ ...payload, estado: 'pendiente', barberia_id: barberiaId }])

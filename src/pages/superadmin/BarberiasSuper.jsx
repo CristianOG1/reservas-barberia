@@ -1,11 +1,5 @@
 // src/pages/superadmin/BarberiasSuper.jsx
-// Listado de TODAS las barberías del software, con sus números. Mismo sistema
-// visual que el panel /admin (slate-50, superficies blancas, `primary`, `amber`
-// para acentos, `font-serif` en títulos y cifras con `tabular-nums`).
-//
-// Los datos salen de UNA sola llamada a la RPC `superadmin_resumen_barberias()`:
-// la función agrega por barbería los conteos (citas del mes, citas totales,
-// servicios, barberos y productos), así que no hay N+1 ni varias consultas.
+// Todas las barberías con sus números, en una sola RPC (sin N+1).
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import BarberiaForm from './BarberiaForm'
@@ -13,13 +7,7 @@ import { dominioBaseDeBarberias } from '../../utils/dominio'
 
 const ITEMS_POR_PAGINA = 8
 
-/* La dirección de una barbería es `https://<slug>.<VITE_DOMINIO_BASE>`.
-   ⚠ **No se deduce del host actual contando sus partes**: `gools.com.mx` tiene tres
-   etiquetas y una barbería serían cuatro, mientras que el dominio anterior tenía
-   dos y una eran tres. El mismo cálculo era correcto con uno y falso con el otro.
-   Ahora el dominio base es una variable de compilación (§14.1), igual que en
-   `BarberiaProvider`: los dos componentes leen la misma fuente y no pueden
-   discrepar. Sin la variable no hay dirección que abrir y el botón se deshabilita. */
+// Dirección = https://<slug>.<VITE_DOMINIO_BASE>; sin variable, el botón se deshabilita.
 const DOMINIO_BASE = dominioBaseDeBarberias()
 
 // `created_at` es timestamptz: se muestra en formato corto y en español.
@@ -138,7 +126,6 @@ export default function BarberiasSuper() {
     cargarBarberias()
   }, [cargarBarberias])
 
-  /* ---- Modal ---- */
   const abrirNueva = () => {
     setAviso('')
     setBarberiaEditando(null)
@@ -166,7 +153,6 @@ export default function BarberiasSuper() {
     cargarBarberias()
   }
 
-  /* ---- Activar / desactivar ---- */
   const cambiarActiva = async (b) => {
     const desactivar = b.activa
     const pregunta = desactivar
@@ -197,13 +183,11 @@ export default function BarberiasSuper() {
     cargarBarberias()
   }
 
-  /* ---- Abrir el sitio público de la barbería ---- */
   const abrirSitio = (b) => {
     if (!DOMINIO_BASE) return
     window.open(`https://${b.slug}.${DOMINIO_BASE}`, '_blank', 'noopener,noreferrer')
   }
 
-  /* ---- Filtros + métricas + paginación ---- */
   const filtradas = barberias.filter((b) => {
     const q = busqueda.trim().toLowerCase()
     const coincideBusqueda = !q ||
@@ -235,7 +219,6 @@ export default function BarberiasSuper() {
 
   return (
     <div>
-      {/* ===== Header ===== */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-amber">
@@ -254,7 +237,6 @@ export default function BarberiasSuper() {
         </button>
       </div>
 
-      {/* ===== 4 métricas ===== */}
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-lg bg-primary-50 text-primary">
@@ -289,7 +271,6 @@ export default function BarberiasSuper() {
         </div>
       </div>
 
-      {/* ===== Avisos ===== */}
       {aviso && (
         <div className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
           <p role="status" className="text-sm text-navy">{aviso}</p>
@@ -322,7 +303,6 @@ export default function BarberiasSuper() {
         </div>
       )}
 
-      {/* ===== Barra de filtros ===== */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
         <div className="relative min-w-52 flex-1">
           <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
@@ -353,7 +333,6 @@ export default function BarberiasSuper() {
         </p>
       </div>
 
-      {/* ===== Tabla ===== */}
       {filtradas.length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white px-5 py-12 text-center">
           <p className="text-sm text-slate-500">

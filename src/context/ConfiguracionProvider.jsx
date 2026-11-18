@@ -7,6 +7,7 @@ import { useBarberia } from './useBarberia'
 // objeto neutro para que la UI nunca reviente por un null.
 const CONFIG_VACIA = {
   id: null, barberia_id: null, nombre: '', estado: '', municipio: '', logo: '', descripcion: '',
+  dias_cerrados: [0], bloques_horario: null,
 }
 
 export function ConfiguracionProvider({ children }) {
@@ -47,6 +48,12 @@ export function ConfiguracionProvider({ children }) {
         if (error) console.error(error)
         setConfiguracion(data ?? CONFIG_VACIA)
         setCargando(false)
+        // Título y favicon dinámicos por barbería.
+        const cfg = data ?? CONFIG_VACIA
+        if (cfg.nombre) document.title = cfg.nombre
+        else document.title = 'BarberWeb'
+        const icono = document.getElementById('favicon')
+        if (icono) icono.href = cfg.logo || '/favicon.svg'
       })
     return () => { vigente = false }
   }, [barberiaId])
