@@ -203,8 +203,16 @@ function Contenido() {
         <Route path="configuracion" element={<ConfiguracionAdmin />} />
       </Route>
 
-      {/* Agendar sigue fuera del layout: es una pantalla completa, sin navbar. */}
-      <Route path="/agendar" element={<BookingPageLazy />} />
+      {/* Agendar sigue fuera del layout: es una pantalla completa, sin navbar.
+          ConfiguracionProvider para que BookingPage lea bloques_horario y dias_cerrados. */}
+      <Route
+        path="/agendar"
+        element={
+          <ConfiguracionProvider>
+            <BookingPageLazy />
+          </ConfiguracionProvider>
+        }
+      />
 
       <Route element={<LayoutPublico />}>
         <Route

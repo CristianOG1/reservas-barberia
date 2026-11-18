@@ -209,3 +209,92 @@ describe('ConfiguracionAdmin · el logo (F-12)', () => {
     })
   })
 })
+
+describe('ConfiguracionAdmin · días cerrados (F-13)', () => {
+  it('F-13 · los días cerrados vienen de la configuración', () => {
+    montar({ configuracion: { ...CONFIGURACION, dias_cerrados: [0, 6] } })
+
+    expect(screen.getByRole('switch', { name: 'Dom cerrado' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
+    expect(screen.getByRole('switch', { name: 'Sáb cerrado' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
+    expect(screen.getByRole('switch', { name: 'Lun abierto' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    )
+  })
+
+  it('F-13 · al guardar se envían los días cerrados al upsert', async () => {
+    const user = userEvent.setup()
+    montar({ configuracion: { ...CONFIGURACION, dias_cerrados: [0] } })
+
+    // Marcar sábado como cerrado (pasa de [0] a [0, 6]).
+    await user.click(screen.getByRole('switch', { name: 'Sáb abierto' }))
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => {
+      expect(llamadaConfiguracion()).toBeDefined()
+    })
+    expect(llamadaConfiguracion().carga.dias_cerrados).toEqual([0, 6])
+  })
+})
+
+describe('ConfiguracionAdmin · bloques horarios (F-13)', () => {
+  it('F-13 · los bloques horarios vienen de la configuración', () => {
+    montar({
+      configuracion: {
+        ...CONFIGURACION,
+        bloques_horario: [{ titulo: 'Mañana', horas: ['10:00', '11:00'] }],
+      },
+    })
+
+    expect(screen.getByRole('switch', { name: '10:00' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('switch', { name: '11:00' })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('F-13 · desactivar una hora la excluye del upsert', async () => {
+    const user = userEvent.setup()
+    montar({
+      configuracion: {
+        ...CONFIGURACION,
+        bloques_horario: [{ titulo: 'Mañana', horas: ['10:00', '11:00'] }],
+      },
+    })
+
+    await user.click(screen.getByRole('switch', { name: '11:00' }))
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => {
+      expect(llamadaConfiguracion()).toBeDefined()
+    })
+    expect(llamadaConfiguracion().carga.bloques_horario).toEqual([
+      { titulo: 'Mañana', horas: ['10:00'] },
+    ])
+  })
+
+  it('F-13 · agregar una hora nueva la incluye en el upsert', async () => {
+    const user = userEvent.setup()
+    montar({
+      configuracion: {
+        ...CONFIGURACION,
+        bloques_horario: [{ titulo: 'Mañana', horas: ['10:00'] }],
+      },
+    })
+
+    const input = screen.getByPlaceholderText('HH:MM')
+    await user.clear(input)
+    await user.type(input, '12:30')
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => {
+      expect(llamadaConfiguracion()).toBeDefined()
+    })
+    expect(llamadaConfiguracion().carga.bloques_horario).toEqual([
+      { titulo: 'Mañana', horas: ['10:00', '12:30'] },
+    ])
+  })
+})

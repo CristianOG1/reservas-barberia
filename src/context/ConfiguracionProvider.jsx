@@ -7,6 +7,7 @@ import { useBarberia } from './useBarberia'
 // objeto neutro para que la UI nunca reviente por un null.
 const CONFIG_VACIA = {
   id: null, barberia_id: null, nombre: '', estado: '', municipio: '', logo: '', descripcion: '',
+  dias_cerrados: [0], bloques_horario: null,
 }
 
 export function ConfiguracionProvider({ children }) {

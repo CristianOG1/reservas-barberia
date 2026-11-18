@@ -12,13 +12,15 @@ import { useConfirmarCita } from '../../hooks/useConfirmarCita'
 import { useConfiguracion } from '../../context/useConfiguracion'
 import { useBarberia } from '../../context/useBarberia'
 import {
+  bloquesDeConfig,
+  diasCerradosDeConfig,
   duracionTotalCita,
   estadoDe,
   mensajeRecordatorio,
   partirServicios,
   productosCita,
 } from '../../utils/citas'
-import { DIAS_CORTO, FechaISO, etiquetaFecha, formatearHora, formatRecordatorio, minutosDeHora } from '../../utils/fecha'
+import { DIAS_CORTO, FechaISO, etiquetaFecha, formatearHora, formato12h, formatRecordatorio, minutosDeHora } from '../../utils/fecha'
 import { telefonoParaWhatsApp } from '../../utils/telefono'
 
 /* ============================================================
@@ -627,6 +629,36 @@ export default function CitasAdmin() {
 
   const citasFiltradas = citasBase.filter((c) => tab === 'todas' || estadoDe(c) === tab)
 
+  /* ---- Datos para la vista calendario ---- */
+  const bloques = bloquesDeConfig(configuracion)
+  const diasCerrados = diasCerradosDeConfig(configuracion)
+  const fechaCerrada = diasCerrados.includes(new Date(`${fechaSeleccionada}T00:00:00`).getDay())
+  const barberosActivos = barberos.filter((b) => b.disponible !== false)
+  const tieneSinAsignar = citasDelDia.some((c) => !c.barbero_id)
+  const columnasCalendario = [
+    ...barberosActivos,
+    ...(tieneSinAsignar ? [{ id: null, nombre: 'Sin asignar' }] : []),
+  ]
+  const todasLasHoras = bloques.flatMap((b) => b.horas)
+
+  const citaEnCelda = (hora, barberoId) =>
+    citasDelDia.find((c) => c.hora === hora && c.barbero_id === barberoId)
+
+  const abrirDesdeCalendario = (hora, barberoId) => {
+    setCitaEditando({
+      fecha: fechaSeleccionada,
+      hora,
+      barbero_id: barberoId || null,
+      nombre: '',
+      telefono: '',
+      correo: '',
+      servicio: '',
+      total: '',
+      notas: '',
+    })
+    setMostrarForm(true)
+  }
+
   const totalPaginas = Math.max(1, Math.ceil(citasFiltradas.length / ITEMS_POR_PAGINA))
   const paginadas = citasFiltradas.slice((pagina - 1) * ITEMS_POR_PAGINA, pagina * ITEMS_POR_PAGINA)
   const desde = citasFiltradas.length === 0 ? 0 : (pagina - 1) * ITEMS_POR_PAGINA + 1
@@ -932,31 +964,78 @@ export default function CitasAdmin() {
           SECCIÓN 4 · TABLA DE CITAS
           ========================================================== */}
       {vista === 'calendario' ? (
-        /* PENDIENTE: vista calendario. La pestaña ya es navegable, pero la línea de
-           tiempo por hora no tiene lógica todavía. Requiere, además, revisar
-           solapamientos de horario (hoy nada impide reservar dos citas en el
-           mismo slot). */
-        <div className="rounded-xl border border-slate-200 bg-white px-5 py-16 text-center">
-          <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-primary-50 text-primary">
-            <IconoParrilla />
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          {fechaCerrada && (
+            <div className="p-5 rounded-lg border border-amber-200 bg-amber-50">
+              <p className="text-sm font-medium text-amber-800">
+                Día cerrado según configuración: {etiquetaFecha(fechaSeleccionada)}
+              </p>
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-full">
+              <thead className="border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate">
+                    Hora
+                  </th>
+                  {columnasCalendario.map((col) => (
+                    <th
+                      key={col.id ?? 'sin-asignar'}
+                      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate min-w-[140px]"
+                    >
+                      {col.nombre}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {todasLasHoras.map((hora) => (
+                  <tr key={hora} className="border-b border-slate-100 last:border-0">
+                    <td className="px-4 py-3 font-serif text-sm tabular-nums text-navy">
+                      {formato12h(hora)}
+                    </td>
+                    {columnasCalendario.map((col) => {
+                      const cita = citaEnCelda(hora, col.id)
+                      return (
+                        <td key={col.id ?? 'sin-asignar'} className="px-4 py-3">
+                          {fechaCerrada ? null : cita ? (
+                            <div className="p-2 rounded border border-slate-200 bg-slate-50">
+                              <p className="text-xs font-medium text-navy">{cita.nombre}</p>
+                              <p className="text-[10px] text-slate">
+                                {cita.servicio} · {duracionTotalCita(cita, servicios)} min
+                              </p>
+                              <span
+                                className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${BADGE_ESTADO[cita.estado || 'pendiente']}`}
+                              >
+                                {ETIQUETA_ESTADO[cita.estado || 'pendiente']}
+                              </span>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => abrirDesdeCalendario(hora, col.id)}
+                              className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-navy transition-colors hover:bg-slate-100 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                            >
+                              + Agendar
+                            </button>
+                          )}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <h2 className="font-serif text-lg text-navy">Vista Calendario</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm text-slate">
-            Próximamente: rejilla de franjas horarias con la duración real de cada servicio,
-            una columna por barbero y el conflicto de agenda detectado.
-          </p>
-          <ul className="mx-auto mt-5 max-w-sm space-y-1.5 text-left text-sm text-slate">
-            <li className="flex items-start gap-2"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" />Franjas por hora en la rejilla</li>
-            <li className="flex items-start gap-2"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" />Bloqueos por mantenimiento y descansos</li>
-            <li className="flex items-start gap-2"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" />Aviso de solapamiento al reservar</li>
-          </ul>
-          <button
-            onClick={() => setVista('lista')}
-            className="mt-6 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            <IconoLista />
-            Volver a la lista detallada
-          </button>
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={() => setVista('lista')}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm text-navy transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <IconoLista />
+              Volver a la lista detallada
+            </button>
+          </div>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">

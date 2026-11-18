@@ -2,21 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
 import { useBarberia } from '../context/useBarberia'
+import { useConfiguracion } from '../context/useConfiguracion'
 import { supabase } from '../supabaseClient'
 import { borrarBorrador, guardarBorrador, leerBorrador } from '../utils/borrador'
 import { FechaISO, formato12h, lunesDe, minutosDeHora } from '../utils/fecha'
 import { duracionAMinutos, formatoDuracion } from '../utils/formato'
+import { bloquesDeConfig, diasCerradosDeConfig } from '../utils/citas'
 import { validarObligatorios, validarTelefono } from '../utils/validaciones'
 
 const PASOS = ['Servicio', 'Fecha & Hora', 'Tus Datos']
-
-// Las horas SIEMPRE en 24 h ('14:30'): la columna `citas.hora` es `time without
-// time zone` y Postgres rechaza '14:30 PM'. El AM/PM solo se muestra en pantalla.
-const BLOQUES = [
-  { titulo: 'Mañana (10:00 – 13:00)', horas: ['10:00', '11:00', '11:50', '12:40'] },
-  { titulo: 'Tarde (14:00 – 18:00)', horas: ['14:30', '15:20', '16:00', '17:30'] },
-  { titulo: 'Noche (18:30 – 20:00)', horas: ['18:30'] },
-]
 
 const ETIQUETAS_DIA = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM']
 
@@ -37,6 +31,10 @@ export default function BookingPage() {
   // La cita pertenece a UNA barbería: lecturas, RPC e insert llevan su id.
   const { barberia } = useBarberia()
   const barberiaId = barberia?.id ?? null
+  // Configuración de la barbería: bloques de horario y días cerrados.
+  const { configuracion } = useConfiguracion()
+  const bloques = bloquesDeConfig(configuracion)
+  const diasCerrados = diasCerradosDeConfig(configuracion)
 
   // Se lee una sola vez al montar: si viene de /login trae lo que ya había elegido.
   const [borrador] = useState(leerBorrador)
@@ -148,20 +146,24 @@ export default function BookingPage() {
     return () => { vigente = false }
   }, [barberiaId])
 
-  /* ---- Horas ya ocupadas ----
-     Se consulta por RPC: `citas` no es legible por `anon` (expondría nombre,
-     teléfono y correo). `horas_ocupadas` es SECURITY DEFINER y devuelve
-     únicamente columnas `hora`.
+  // Duración estimada: solo la de los servicios. Los productos no ocupan silla.
+  const duracionTotalMin = serviciosElegidos.reduce((a, s) => a + duracionAMinutos(s.duracion), 0)
 
-     Con barbero concreto devuelve las horas ocupadas de ese barbero; con
-     "Cualquier barbero" devuelve las horas en las que ya no queda ninguno
-     disponible. Siempre dentro de la barbería actual. */
+  /* ---- Horas ya ocupadas ----
+   Se consulta por RPC: `citas` no es legible por `anon` (expondría nombre,
+   teléfono y correo). `horas_ocupadas` es SECURITY DEFINER y devuelve
+   únicamente columnas `hora`.
+
+   Con barbero concreto devuelve las horas ocupadas de ese barbero; con
+   "Cualquier barbero" devuelve las horas en las que ya no queda ninguno
+   disponible. Siempre dentro de la barbería actual. */
   const cargarHorasOcupadas = async (fecha, barberoId) => {
     if (!fecha || !barberiaId) return
     const { data, error } = await supabase.rpc('horas_ocupadas', {
       fecha_consulta: fecha,
       barberia_id: barberiaId,
       barbero_id: barberoId,
+      duracion_consulta: duracionTotalMin,
     })
     if (error) {
       console.error(error)
@@ -178,7 +180,12 @@ export default function BookingPage() {
     if (!fechaElegida || !barberiaId) return
     let vigente = true
     supabase
-      .rpc('horas_ocupadas', { fecha_consulta: fechaElegida, barberia_id: barberiaId, barbero_id: barberoIdElegido })
+      .rpc('horas_ocupadas', {
+        fecha_consulta: fechaElegida,
+        barberia_id: barberiaId,
+        barbero_id: barberoIdElegido,
+        duracion_consulta: duracionTotalMin,
+      })
       .then(({ data, error }) => {
         if (!vigente) return
         if (error) {
@@ -189,7 +196,7 @@ export default function BookingPage() {
         setHorasOcupadas((data || []).map((h) => String(h).slice(0, 5)))
       })
     return () => { vigente = false }
-  }, [fechaElegida, barberoIdElegido, barberiaId])
+  }, [fechaElegida, barberoIdElegido, barberiaId, duracionTotalMin])
 
   /* ---- Calendario: 7 días de la semana, generado desde la fecha real ---- */
   const dias = useMemo(() => {
@@ -203,10 +210,10 @@ export default function BookingPage() {
         numero: date.getDate(),
         esHoy: fecha === hoyISO,
         pasado: fecha < hoyISO,
-        cerrado: date.getDay() === 0, // domingo cerrado
+        cerrado: diasCerrados.includes(date.getDay()),
       }
     })
-  }, [semanaBase, hoyISO])
+  }, [semanaBase, hoyISO, diasCerrados])
 
   // Mes/año reales: se toma el día del medio de la semana para que una semana a
   // caballo entre dos meses no se etiquete con el mes equivocado.
@@ -269,7 +276,6 @@ export default function BookingPage() {
   const total = totalServicios + totalProductos
 
   // Duración estimada: solo la de los servicios. Los productos no ocupan silla.
-  const duracionTotalMin = serviciosElegidos.reduce((a, s) => a + duracionAMinutos(s.duracion), 0)
 
   /* ---- Reservar requiere sesión ----
      Explorar y elegir es libre; al confirmar se pide iniciar sesión. Si no hay
@@ -339,9 +345,14 @@ export default function BookingPage() {
         fecha_consulta: fechaElegida,
         hora_consulta: horaElegida,
         barberia_id: barberiaId,
+        duracion_consulta: duracionTotalMin,
       })
       if (error) console.error(error)
       barberoId = data || null
+      if (!barberoId) {
+        setEstadoEnvio('error')
+        setErroresCampos((prev) => ({ ...prev, _barbero: 'No hay barbero disponible en esa franja. Elige otro horario.' }))
+      }
     }
 
     // No se envía `addon` (la columna existe pero la página ya no ofrece el
@@ -357,6 +368,7 @@ export default function BookingPage() {
       productos: productosElegidos.map((p) => ({ nombre: p.nombre, precio: Number(p.precio) || 0 })),
       fecha: fechaElegida,          // 'YYYY-MM-DD' en hora local
       hora: horaElegida,            // 'HH:MM' 24 h
+      duracion_minutos: duracionTotalMin,
       total,
       barberia_id: barberiaId,      // la cita pertenece a esta barbería
       barbero_id: barberoId,
@@ -709,7 +721,7 @@ export default function BookingPage() {
 
               {/* Bloques de horario */}
               <div className="flex flex-col gap-6">
-                {BLOQUES.map((bloque) => (
+                {bloques.map((bloque) => (
                   <div key={bloque.titulo}>
                     <p className="text-neutral-500 text-xs tracking-wide mb-3">{bloque.titulo}</p>
                     <div className="flex flex-wrap gap-3">

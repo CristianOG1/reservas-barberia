@@ -19,6 +19,7 @@ import {
   citasDeHoy,
   contarPorEstado,
   ordenarPorStock,
+  porcentajeOcupacionSemanal,
   productosConStockBajo,
   stockDe,
   topServicios,
@@ -134,6 +135,7 @@ export default function ResumenPage() {
   const categorias = categoriasDeServicios(servicios)
   const populares = topServicios(citasSemana, 3)
   const inventarioCritico = ordenarPorStock(productos).slice(0, 4)
+  const ocupacionSemanal = porcentajeOcupacionSemanal(citasSemana, barberos, configuracion, hoy)
 
   const metricas = [
     {
@@ -184,6 +186,18 @@ export default function ResumenPage() {
         </svg>
       ),
     },
+    {
+      label: 'Ocupación Semanal',
+      valor: `${ocupacionSemanal}%`,
+      detalle: `${citasSemana.filter((c) => (c.estado || 'pendiente') !== 'cancelada').length} citas activas`,
+      apoyo: 'de la capacidad estimada',
+      iconoFondo: 'bg-primary-50 text-primary',
+      icono: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+      ),
+    },
   ]
 
   return (
@@ -228,7 +242,7 @@ export default function ResumenPage() {
       ) : (
         <>
           {/* Fila de 4 tarjetas */}
-          <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-5">
             {metricas.map((m) => (
               <div key={m.label} className="rounded-xl border border-slate-200 bg-white p-5">
                 <div className="flex items-start justify-between">

@@ -6,7 +6,7 @@
 // de datos reales de la barberia (filtrados por `barberia_id`). Si no hay
 // datos, el resultado es 0 o una lista vacia: nunca un numero de ejemplo.
 
-import { partirServicios } from './citas'
+import { partirServicios, bloquesDeConfig, diasCerradosDeConfig } from './citas'
 
 /**
  * Stock mínimo de un producto: por debajo (o justo en) este número hay que
@@ -112,4 +112,27 @@ export function barberosDisponibles(barberos) {
 /** Cuantos barberos estan en pausa (no pueden recibir citas). */
 export function barberosEnPausa(barberos) {
   return (barberos || []).length - barberosDisponibles(barberos)
+}
+
+/**
+ * Porcentaje de ocupación semanal: citas activas de la semana sobre la
+ * capacidad semanal (días abiertos × horas por día × barberos disponibles).
+ * Acotado entre 0 y 100. `hoy` se recibe por consistencia; las citas ya vienen
+ * filtradas por la semana del resumen.
+ */
+export function porcentajeOcupacionSemanal(citasSemana, barberos, configuracion, hoy) {
+  void hoy // recibido por consistencia con la firma del resumen; las citas ya vienen filtradas por semana
+  const bloques = bloquesDeConfig(configuracion)
+  const diasCerrados = diasCerradosDeConfig(configuracion)
+  const totalHorasPorDia = bloques.reduce((acc, b) => acc + b.horas.length, 0)
+  const disponibles = Math.max(barberosDisponibles(barberos), 1)
+  const diasAbiertos = 7 - diasCerrados.length
+  const capacidadSemanal = diasAbiertos * totalHorasPorDia * disponibles
+
+  if (capacidadSemanal === 0) return 0
+
+  const citasActivas = (citasSemana || []).filter((c) => (c.estado || 'pendiente') !== 'cancelada')
+  const ocupacion = (citasActivas.length / capacidadSemanal) * 100
+
+  return Math.min(100, Math.max(0, Math.round(ocupacion)))
 }

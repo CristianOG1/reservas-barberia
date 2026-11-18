@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { useConfiguracion } from '../../context/useConfiguracion'
 import { useBarberia } from '../../context/useBarberia'
+import { DIAS_CERRADOS_POR_DEFECTO, bloquesDeConfig } from '../../utils/citas'
 
 const MAX_IMAGEN_BYTES = 2 * 1024 * 1024 // 2 MB
 const CARPETA = 'configuracion'
@@ -46,6 +47,11 @@ function FormularioConfiguracion({ configuracion }) {
     municipio: configuracion.municipio || '',
     descripcion: configuracion.descripcion || '',
   }))
+  const [diasCerrados, setDiasCerrados] = useState(configuracion?.dias_cerrados ?? DIAS_CERRADOS_POR_DEFECTO)
+  const [bloques, setBloques] = useState(bloquesDeConfig(configuracion).map((b) => ({
+    titulo: b.titulo,
+    horas: b.horas.map((h) => ({ hora: h, activa: true })),
+  })))
   const [logoActual, setLogoActual] = useState(configuracion.logo || '')
   const [archivoLogo, setArchivoLogo] = useState(null)
   const [previewLogo, setPreviewLogo] = useState(configuracion.logo || '')
@@ -54,6 +60,37 @@ function FormularioConfiguracion({ configuracion }) {
   const [exitoMsg, setExitoMsg] = useState(false)
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value })
+
+  const toggleDia = (dia) => {
+    setDiasCerrados((prev) =>
+      prev.includes(dia) ? prev.filter((d) => d !== dia) : [...prev, dia].sort((a, b) => a - b)
+    )
+  }
+
+  const toggleHora = (bIdx, hIdx) => {
+    setBloques((prev) =>
+      prev.map((b, i) =>
+        i === bIdx
+          ? {
+              ...b,
+              horas: b.horas.map((h, j) =>
+                j === hIdx ? { ...h, activa: !h.activa } : h
+              ),
+            }
+          : b
+      )
+    )
+  }
+
+  const agregarHora = (bIdx, valor) => {
+    const h = valor.trim()
+    if (!h || !/^\d{2}:\d{2}$/.test(h)) return
+    setBloques((prev) =>
+      prev.map((b, i) =>
+        i === bIdx ? { ...b, horas: [...b.horas, { hora: h, activa: true }].sort((a, b) => a.hora.localeCompare(b.hora)) } : b
+      )
+    )
+  }
 
   const handleLogo = (e) => {
     const archivo = e.target.files[0]
@@ -110,6 +147,11 @@ function FormularioConfiguracion({ configuracion }) {
           municipio: form.municipio || null,
           logo,
           descripcion: form.descripcion || null,
+          dias_cerrados: diasCerrados,
+          bloques_horario: bloques.map((b) => ({
+            titulo: b.titulo,
+            horas: b.horas.filter((h) => h.activa).map((h) => h.hora),
+          })),
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'barberia_id' }
@@ -228,6 +270,75 @@ function FormularioConfiguracion({ configuracion }) {
             Configuración guardada.
           </p>
         )}
+
+        {/* ===== Días cerrados ===== */}
+        <div className="mb-5">
+          <label className="block text-sm text-slate mb-3">Días cerrados de la semana</label>
+          <div className="grid grid-cols-7 gap-1">
+            {[0, 1, 2, 3, 4, 5, 6].map((d) => {
+              const cerrado = diasCerrados.includes(d)
+              const etiquetas = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  role="switch"
+                  aria-checked={cerrado}
+                  onClick={() => toggleDia(d)}
+                  aria-label={`${etiquetas[d]} ${cerrado ? 'cerrado' : 'abierto'}`}
+                  className={`flex flex-col items-center gap-1 rounded-lg border px-3 py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    cerrado
+                      ? 'border-primary bg-primary text-white'
+                      : 'border-slate-200 text-slate hover:bg-slate-100'
+                  }`}
+                >
+                  {etiquetas[d]}
+                  <span className="text-[10px]">{cerrado ? 'cerrado' : 'abierto'}</span>
+                </button>
+              )
+            })}
+          </div>
+          <p className="mt-1.5 text-xs text-slate">Marca los días en que la barbería no atiende.</p>
+        </div>
+
+        {/* ===== Bloques horarios ===== */}
+        <div className="mb-5">
+          <label className="block text-sm text-slate mb-3">Franjas horarias por bloque</label>
+          <div className="space-y-3">
+            {bloques.map((bloque, bIdx) => (
+              <div key={bloque.titulo} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold text-navy">{bloque.titulo}</p>
+                  <input
+                    type="text"
+                    placeholder="HH:MM"
+                    onChange={(e) => agregarHora(bIdx, e.target.value)}
+                    className="w-16 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-navy outline-none focus:border-primary focus:ring-2 focus:ring-primary-100"
+                  />
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {bloque.horas.map((h, hIdx) => (
+                    <button
+                      key={h.hora}
+                      type="button"
+                      role="switch"
+                      aria-checked={h.activa}
+                      onClick={() => toggleHora(bIdx, hIdx)}
+                      className={`rounded border px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                        h.activa
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-slate-200 text-slate hover:bg-slate-100'
+                      }`}
+                    >
+                      {h.hora}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-slate">Desactiva las horas que no atiendes en este bloque.</p>
+              </div>
+            ))}
+          </div>
+        </div>
 
         <div className="flex items-center gap-3">
           <button

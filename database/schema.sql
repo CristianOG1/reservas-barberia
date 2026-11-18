@@ -67,7 +67,7 @@ as $$
   select p.barberia_id
     from public.perfiles p
    where p.id = auth.uid()
-     and p.rol = 'admin'
+     and p.rol in ('admin', 'superadmin')
      and p.barberia_id is not null
    limit 1;
 $$;
@@ -128,6 +128,9 @@ create table if not exists public.configuracion (
   updated_at            timestamptz default now(),
   recordatorios_activos boolean not null default false,
   whatsapp_activo       boolean not null default false,
+  dias_cerrados         int[] not null default '{0}',
+  bloques_horario       jsonb not null default
+    '[{"titulo":"Mañana (10:00 – 13:00)","horas":["10:00","11:00","11:50","12:40"]},{"titulo":"Tarde (14:00 – 18:00)","horas":["14:30","15:20","16:00","17:30"]},{"titulo":"Noche (18:30 – 20:00)","horas":["18:30"]}]'::jsonb,
   barberia_id           uuid not null references public.barberias(id),
   unique (barberia_id)
 );
@@ -195,7 +198,8 @@ create table if not exists public.citas (
   recordatorio_2h_enviado_at  timestamptz,
   recordatorio_wa_24h_enviado_at timestamptz, 
   recordatorio_wa_2h_enviado_at  timestamptz,
-  barberia_id                 uuid not null references public.barberias(id)
+  barberia_id                 uuid not null references public.barberias(id),
+  duracion_minutos            integer not null default 30
 );
 
 -- 3.7 perfiles: fuente de verdad del rol -------------------------------------
@@ -224,10 +228,12 @@ create index if not exists membresias_barberia_id_idx      on public.membresias(
 create index if not exists productos_barberia_id_idx        on public.productos(barberia_id);
 create index if not exists servicios_barberia_id_idx        on public.servicios(barberia_id);
 
--- Bloqueo de horarios duplicados: es lo que impide que dos personas
+-- Bloqueo de horarios duplicados por barbero y franja: evita traslapes
+-- entre citas activas del mismo barbero en la misma barberia.
 create unique index if not exists citas_slot_unico
-  on public.citas (barberia_id, fecha, hora)
-  where coalesce(estado, 'pendiente') <> 'cancelada';
+  on public.citas (barberia_id, barbero_id, fecha, hora)
+  where coalesce(estado, 'pendiente') <> 'cancelada'
+    and barbero_id is not null;
 
 -- Indice de apoyo para la RPC de recordatorios: busca citas vivas con
 -- correo y sin marca de aviso.
@@ -249,7 +255,7 @@ alter table public.barberias
   check (
     length(slug) between 3 and 40
     and slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
-    and slug not in ('www','app','admin','api','superadmin','mail','soporte')
+    and slug not in ('www','app','admin','api','superadmin','mail','soporte','avisos','send')
   );
 
 -- El slug es unico en toda la plataforma.
@@ -494,9 +500,34 @@ language plpgsql
 security definer
 set search_path = 'public'
 as $$
+declare
+  v_barbero_id uuid;
+  v_duracion integer;
 begin
   if (p_fecha + p_hora) <= (now() at time zone 'America/Mexico_City') then
     raise exception 'fecha_pasada';
+  end if;
+
+  select c.barbero_id, c.duracion_minutos
+  into v_barbero_id, v_duracion
+  from public.citas c
+  where c.id = p_id
+    and c.cliente_id = auth.uid()
+    and c.estado in ('pendiente', 'confirmada')
+    and (c.fecha + c.hora) > (now() at time zone 'America/Mexico_City');
+
+  if v_barbero_id is not null then
+    if exists (
+      select 1 from public.citas c2
+      where c2.barbero_id = v_barbero_id
+        and c2.id <> p_id
+        and c2.fecha = p_fecha
+        and coalesce(c2.estado, 'pendiente') <> 'cancelada'
+        and p_hora < (c2.hora + (c2.duracion_minutos || ' minutes')::interval)
+        and (p_hora + (v_duracion || ' minutes')::interval) > c2.hora
+    ) then
+      raise exception 'barbero_no_disponible';
+    end if;
   end if;
 
   update public.citas
@@ -513,11 +544,12 @@ begin
 end;
 $$;
 
--- 8.4 asignar_barbero: elige el barbero disponible y libre de la barberia ---
+-- 8.4 asignar_barbero: elige el primer barbero disponible sin traslape en el rango
 create or replace function public.asignar_barbero(
-  fecha_consulta date,
-  hora_consulta  time,
-  barberia_id    uuid
+  p_fecha_consulta date,
+  p_hora_consulta  time,
+  p_barberia_id    uuid,
+  p_duracion_consulta integer default 30
 )
 returns uuid
 language sql
@@ -525,18 +557,18 @@ stable
 security definer
 set search_path = 'public'
 as $$
-  with p as (select fecha_consulta as f, hora_consulta as h, barberia_id as biz)
   select b.id
-  from public.barberos b, p
+  from public.barberos b
   where b.disponible
-    and b.barberia_id = p.biz
+    and b.barberia_id = p_barberia_id
     and not exists (
       select 1 from public.citas c
-      where c.fecha = p.f
-        and c.hora = p.h
+      where c.fecha = p_fecha_consulta
+        and c.barberia_id = p_barberia_id
         and c.barbero_id = b.id
-        and c.barberia_id = p.biz
         and coalesce(c.estado, 'pendiente') <> 'cancelada'
+        and p_hora_consulta < (c.hora + (c.duracion_minutos || ' minutes')::interval)
+        and (p_hora_consulta + (p_duracion_consulta || ' minutes')::interval) > c.hora
     )
   order by b.created_at asc, b.nombre asc
   limit 1;
@@ -544,9 +576,10 @@ $$;
 
 -- 8.5 horas_ocupadas: franjas ya tomadas, para pintar el calendario --------
 create or replace function public.horas_ocupadas(
-  fecha_consulta date,
-  barberia_id     uuid,
-  barbero_id      uuid default null
+  p_fecha_consulta date,
+  p_barberia_id     uuid,
+  p_barbero_id      uuid default null,
+  p_duracion_consulta integer default 30
 )
 returns setof time
 language sql
@@ -554,58 +587,43 @@ stable
 security definer
 set search_path = 'public'
 as $$
-
-  with p as (select fecha_consulta as f, barberia_id as biz, barbero_id as bid)
-
-  -- 1. Barbero concreto: sus horas ocupadas en esa barberia.
-  select c.hora
-  from public.citas c, p
-  where c.fecha = p.f
-    and c.barberia_id = p.biz
-    and c.barbero_id = p.bid
+  -- 1. Barbero concreto: horas de bloque que se traslapan con sus citas activas
+  select h::time
+  from public.configuracion cf,
+       jsonb_array_elements(cf.bloques_horario) as bloque(obj),
+       jsonb_array_elements_text(bloque.obj -> 'horas') as h,
+       public.citas c
+  where cf.barberia_id = p_barberia_id
+    and c.fecha = p_fecha_consulta
+    and c.barberia_id = p_barberia_id
+    and c.barbero_id = p_barbero_id
     and coalesce(c.estado, 'pendiente') <> 'cancelada'
+    and h::time < (c.hora + (c.duracion_minutos || ' minutes')::interval)
+    and (h::time + (p_duracion_consulta || ' minutes')::interval) > c.hora
 
   union
 
-  -- 2. Esa barberia no tiene ningun barbero disponible: manda cualquier cita
-  --    viva del dia.
-  select c.hora
-  from public.citas c, p
-  where c.fecha = p.f
-    and c.barberia_id = p.biz
-    and coalesce(c.estado, 'pendiente') <> 'cancelada'
+  -- 2. p_barbero_id IS NULL: horas en las que NINGUN barbero disponible esta libre
+  select h::time
+  from public.configuracion cf,
+       jsonb_array_elements(cf.bloques_horario) as bloque(obj),
+       jsonb_array_elements_text(bloque.obj -> 'horas') as h
+  where p_barbero_id is null
+    and cf.barberia_id = p_barberia_id
     and not exists (
       select 1 from public.barberos b
-      where b.disponible and b.barberia_id = p.biz
-    )
-
-  union
-
-  -- 3. "Cualquier barbero": horas en las que no queda ni un barbero libre de
-  --    esa barberia.
-  select h.hora
-  from (
-    select distinct c2.hora
-    from public.citas c2, p
-    where c2.fecha = p.f
-      and c2.barberia_id = p.biz
-      and c2.barbero_id is not null
-      and coalesce(c2.estado, 'pendiente') <> 'cancelada'
-  ) h, p
-  where not exists (
-    select 1
-    from public.barberos b
-    where b.disponible
-      and b.barberia_id = p.biz
-      and not exists (
-        select 1 from public.citas c3, p
-        where c3.fecha = p.f
-          and c3.hora = h.hora
-          and c3.barbero_id = b.id
-          and c3.barberia_id = p.biz
-          and coalesce(c3.estado, 'pendiente') <> 'cancelada'
-      )
-  );
+      where b.disponible
+        and b.barberia_id = p_barberia_id
+        and not exists (
+          select 1 from public.citas c
+          where c.fecha = p_fecha_consulta
+            and c.barberia_id = p_barberia_id
+            and c.barbero_id = b.id
+            and coalesce(c.estado, 'pendiente') <> 'cancelada'
+            and h::time < (c.hora + (c.duracion_minutos || ' minutes')::interval)
+            and (h::time + (p_duracion_consulta || ' minutes')::interval) > c.hora
+        )
+    );
 $$;
 
 -- 8.6 superadmin_resumen_barberias: metricas de todas las barberias ---------
@@ -920,14 +938,14 @@ grant execute on function public.rol_actual() to authenticated, service_role;
 revoke all on function public.unirme_a_barberia(uuid) from public, anon, authenticated;
 revoke all on function public.cancelar_cita(uuid) from public, anon, authenticated;
 revoke all on function public.reagendar_cita(uuid, date, time) from public, anon, authenticated;
-revoke all on function public.asignar_barbero(date, time, uuid) from public, anon, authenticated;
-revoke all on function public.horas_ocupadas(date, uuid, uuid) from public, anon, authenticated;
+revoke all on function public.asignar_barbero(date, time, uuid, integer) from public, anon, authenticated;
+revoke all on function public.horas_ocupadas(date, uuid, uuid, integer) from public, anon, authenticated;
 revoke all on function public.superadmin_resumen_barberias() from public, anon, authenticated;
 grant execute on function public.unirme_a_barberia(uuid) to authenticated, service_role;
 grant execute on function public.cancelar_cita(uuid) to authenticated, service_role;
 grant execute on function public.reagendar_cita(uuid, date, time) to authenticated, service_role;
-grant execute on function public.asignar_barbero(date, time, uuid) to anon, authenticated, service_role;
-grant execute on function public.horas_ocupadas(date, uuid, uuid) to anon, authenticated, service_role;
+grant execute on function public.asignar_barbero(date, time, uuid, integer) to anon, authenticated, service_role;
+grant execute on function public.horas_ocupadas(date, uuid, uuid, integer) to anon, authenticated, service_role;
 grant execute on function public.superadmin_resumen_barberias() to authenticated, service_role;
 
 -- Funciones internas: SOLO service_role.
@@ -963,7 +981,10 @@ on conflict (id) do nothing;
 drop policy if exists "Admin sube imagenes" on storage.objects;
 create policy "Admin sube imagenes" on storage.objects
   for insert to authenticated
-  with check (bucket_id = 'imagenes');
+  with check (
+    bucket_id = 'imagenes'
+    and (public.es_superadmin() or (storage.foldername(name))[1] = public.barberia_del_usuario()::text)
+  );
 
 -- ---------------------------------------------------------------------------
 -- 12. CRON: NO va aqui a proposito.

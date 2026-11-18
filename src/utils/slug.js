@@ -6,7 +6,8 @@ export const SLUG_MIN = 3
 export const SLUG_MAX = 40
 
 // Palabras que no pueden ser slug: chocan con direcciones del software.
-const RESERVADOS = ['www', 'app', 'admin', 'api', 'superadmin', 'mail', 'soporte']
+// Debe coincidir con SLUGS_RESERVADOS de src/utils/dominio.js y con el check de la base.
+const RESERVADOS = ['www', 'app', 'admin', 'api', 'superadmin', 'mail', 'soporte', 'avisos', 'send']
 
 /**
  * Sugiere un slug a partir del nombre: minúsculas, sin acentos, con guiones

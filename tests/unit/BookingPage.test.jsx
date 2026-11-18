@@ -346,6 +346,7 @@ describe('BookingPage', () => {
         fecha_consulta: '2026-03-12',
         hora_consulta: '11:00',
         barberia_id: 'b1',
+        duracion_consulta: 30,
       })
     })
 

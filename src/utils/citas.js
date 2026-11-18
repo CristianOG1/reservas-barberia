@@ -9,6 +9,27 @@ import { etiquetaFecha, formatearHora } from './fecha'
 // Minutos, cuando el servicio no está en el catálogo.
 const DURACION_POR_DEFECTO = 30
 
+// Bloques de horario por defecto (24 h). Compartidos entre BookingPage y CitasCliente
+// para no duplicar la lista en dos componentes.
+export const BLOQUES_POR_DEFECTO = [
+  { titulo: 'Mañana (10:00 – 13:00)', horas: ['10:00', '11:00', '11:50', '12:40'] },
+  { titulo: 'Tarde (14:00 – 18:00)',  horas: ['14:30', '15:20', '16:00', '17:30'] },
+  { titulo: 'Noche (18:30 – 20:00)', horas: ['18:30'] },
+]
+
+// Días cerrados por defecto: 0 = domingo.
+export const DIAS_CERRADOS_POR_DEFECTO = [0]
+
+// Devuelve los bloques de horario de la configuración de la barbería, o los por defecto si no hay fila.
+export function bloquesDeConfig(configuracion) {
+  return configuracion?.bloques_horario ?? BLOQUES_POR_DEFECTO
+}
+
+// Devuelve los días cerrados de la configuración, o los por defecto si no hay fila.
+export function diasCerradosDeConfig(configuracion) {
+  return configuracion?.dias_cerrados ?? DIAS_CERRADOS_POR_DEFECTO
+}
+
 // 'estado' es nullable en la base: las citas nuevas nacen sin estado.
 export function estadoDe(cita) {
   return cita.estado || 'pendiente'
