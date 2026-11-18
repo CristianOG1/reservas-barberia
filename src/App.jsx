@@ -17,6 +17,7 @@ import { useBarberia } from './context/useBarberia'
 import { useAuth } from './context/useAuth'
 import ProductosPage from './pages/ProductosPage'
 import ContactoPage from './components/Contacto'
+import PrivacidadPage from './pages/PrivacidadPage'
 import ServicesPage from './pages/ServicesPage'
 import Productos from './components/Productos'
 import ClienteDashboard from './pages/cliente/ClienteDashboard'
@@ -229,6 +230,7 @@ function Contenido() {
         <Route path="productos" element={<ProductosPage />} />
         <Route path="servicios" element={<ServicesPage />} />
         <Route path="contacto" element={<ContactoPage />} />
+        <Route path="privacidad" element={<PrivacidadPage />} />
       </Route>
 
       <Route

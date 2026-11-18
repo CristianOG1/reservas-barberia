@@ -121,6 +121,7 @@ async function irAlPasoDeDatos(user, container, { dia = 'JUE', hora = '11:00 AM'
   escribir(container, 'nombre', 'Ana Prueba')
   escribir(container, 'telefono', '5512345678')
   escribir(container, 'correo', 'ana@ejemplo.com')
+  await user.click(screen.getByLabelText(/Acepto los Términos/))
 }
 
 describe('BookingPage', () => {
@@ -150,6 +151,7 @@ describe('BookingPage', () => {
     escribir(container, 'nombre', 'Ana Prueba')
     escribir(container, 'telefono', '5512345678')
     escribir(container, 'correo', 'ana@ejemplo.com')
+    await user.click(screen.getByLabelText(/Acepto los Términos/))
 
     await user.click(screen.getByRole('button', { name: 'CONFIRMAR RESERVACIÓN →' }))
     await user.click(screen.getByRole('button', { name: 'Confirmar reservación' }))
@@ -251,7 +253,7 @@ describe('BookingPage', () => {
     await user.click(screen.getByRole('button', { name: 'CONFIRMAR RESERVACIÓN →' }))
 
     // El aviso explica cuántos dígitos se esperan.
-    expect(await screen.findByText(/3 dígitos/)).toBeInTheDocument()
+    expect(await screen.findByText(/exactamente 10 dígitos/)).toBeInTheDocument()
     expect(screen.queryByText('Confirma tu reservación')).not.toBeInTheDocument()
     // No se inserta nada: la cita no se guardaría con un teléfono inservible.
     expect(
@@ -259,6 +261,42 @@ describe('BookingPage', () => {
         (c) => c.tipo === 'query' && c.tabla === 'citas' && c.operacion === 'insert'
       )
     ).toBeUndefined()
+  })
+
+  it('F-05 · no deja confirmar sin aceptar los términos y el aviso de privacidad', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const { container } = montar({ conSesion: true })
+
+    await elegirServicio(user)
+    await avanzarAlCalendario(user)
+    await elegirDia(user, 'JUE')
+    await elegirHora(user, '11:00 AM')
+    await user.click(screen.getByRole('button', { name: 'Siguiente →' }))
+    escribir(container, 'nombre', 'Ana Prueba')
+    escribir(container, 'telefono', '5512345678')
+    escribir(container, 'correo', 'ana@ejemplo.com')
+
+    await user.click(screen.getByRole('button', { name: 'CONFIRMAR RESERVACIÓN →' }))
+
+    expect(
+      await screen.findByText('Acepta los términos y el aviso de privacidad para confirmar.')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Confirma tu reservación')).not.toBeInTheDocument()
+    expect(
+      supabaseMock.llamadas.find(
+        (c) => c.tipo === 'query' && c.tabla === 'citas' && c.operacion === 'insert'
+      )
+    ).toBeUndefined()
+  })
+
+  it('F-05 · el teléfono se limpia al escribir y se corta a 10 dígitos', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const { container } = montar({ conSesion: true })
+
+    await irAlPasoDeDatos(user, container)
+    escribir(container, 'telefono', '55-1234-5678-99')
+
+    expect(campo(container, 'telefono')).toHaveValue('5512345678')
   })
 
   // --------------------------------------------------------- reglas de hora

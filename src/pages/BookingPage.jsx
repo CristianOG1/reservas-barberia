@@ -7,8 +7,8 @@ import { supabase } from '../supabaseClient'
 import { borrarBorrador, guardarBorrador, leerBorrador } from '../utils/borrador'
 import { FechaISO, formato12h, lunesDe, minutosDeHora } from '../utils/fecha'
 import { duracionAMinutos, formatoDuracion } from '../utils/formato'
-import { bloquesDeConfig, diasCerradosDeConfig } from '../utils/citas'
-import { validarObligatorios, validarTelefono } from '../utils/validaciones'
+import { bloquesDeConfig, diasCerradosDeConfig, normalizarTelefono, validarTelefonoMexico } from '../utils/citas'
+import { validarObligatorios } from '../utils/validaciones'
 
 const PASOS = ['Servicio', 'Fecha & Hora', 'Tus Datos']
 
@@ -61,11 +61,28 @@ export default function BookingPage() {
 
   const [form, setForm] = useState(borrador?.form ?? { nombre: '', telefono: '', correo: '', notas: '' })
   const [searchParams] = useSearchParams()
-  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value })
+  // El teléfono se limpia al escribir: solo dígitos y 10 como máximo.
+  const handleChange = (e) => {
+    const { name, value } = e.target
+    setForm({ ...form, [name]: name === 'telefono' ? normalizarTelefono(value) : value })
+  }
 
   // Aviso por campo de los datos del titular (paso 3). Se vacía en cuanto se
   // vuelve a confirmar: el mensaje va con el dato que falta.
   const [erroresCampos, setErroresCampos] = useState({})
+
+  // No se guarda en el borrador: al restaurarlo siempre hay que volver a aceptar.
+  const [aceptaTerminos, setAceptaTerminos] = useState(false)
+
+  const alternarTerminos = (e) => {
+    const marcado = e.target.checked
+    setAceptaTerminos(marcado)
+    if (marcado) setErroresCampos((prev) => {
+      const resto = { ...prev }
+      delete resto._terminos
+      return resto
+    })
+  }
 
   const [estadoEnvio, setEstadoEnvio] = useState('idle') // idle | enviando | error | slot | exito
 
@@ -312,10 +329,7 @@ export default function BookingPage() {
 
   /* ---- Validación de los datos del titular (paso 3) ----
      Los campos del paso 3 NO están dentro de un `<form>`: el `required` del
-     navegador no se aplica, así que se validan aquí y se avisa **por campo**.
-     La regla del teléfono es la de `validarTelefono`, que reutiliza la de
-     `telefonoParaWhatsApp`: si el número no sirve para un WhatsApp, no
-     sirve para una cita. */
+     navegador no se aplica, así que se validan aquí y se avisa **por campo**. */
   const validarDatosCliente = () => {
     const errores = validarObligatorios(form, {
       nombre: 'Escribe tu nombre completo.',
@@ -323,9 +337,12 @@ export default function BookingPage() {
       correo: 'Escribe tu correo para recibir la confirmación.',
     })
     const problemaTelefono = String(form.telefono ?? '').trim()
-      ? validarTelefono(form.telefono)
+      ? validarTelefonoMexico(form.telefono)
       : null
     if (problemaTelefono) errores.telefono = problemaTelefono
+    if (!aceptaTerminos) {
+      errores._terminos = 'Acepta los términos y el aviso de privacidad para confirmar.'
+    }
     return errores
   }
 
@@ -823,6 +840,31 @@ export default function BookingPage() {
                   {erroresCampos.correo && (
                     <p id="error-correo" role="alert" className="text-red-400 text-xs mt-1">
                       {erroresCampos.correo}
+                    </p>
+                  )}
+                </div>
+                <div className="sm:col-span-2">
+                  <label htmlFor="acepta-terminos" className="flex items-start gap-3 text-neutral-400 text-xs leading-relaxed cursor-pointer">
+                    <input
+                      id="acepta-terminos"
+                      type="checkbox"
+                      checked={aceptaTerminos}
+                      onChange={alternarTerminos}
+                      aria-invalid={erroresCampos._terminos ? 'true' : undefined}
+                      aria-describedby={erroresCampos._terminos ? 'error-terminos' : undefined}
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-sky-500"
+                    />
+                    <span>
+                      Acepto los Términos y Condiciones, el Aviso de Privacidad y el envío de
+                      recordatorios de mi cita por correo o WhatsApp.{' '}
+                      <Link to="/privacidad" target="_blank" rel="noreferrer" className="text-sky-400 underline">
+                        Leer el aviso
+                      </Link>
+                    </span>
+                  </label>
+                  {erroresCampos._terminos && (
+                    <p id="error-terminos" role="alert" className="text-red-400 text-xs mt-1">
+                      {erroresCampos._terminos}
                     </p>
                   )}
                 </div>

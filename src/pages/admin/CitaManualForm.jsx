@@ -6,7 +6,8 @@
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { useBarberia } from '../../context/useBarberia'
-import { validarObligatorios, validarTelefono } from '../../utils/validaciones'
+import { validarObligatorios } from '../../utils/validaciones'
+import { normalizarTelefono, validarTelefonoMexico } from '../../utils/citas'
 
 export default function CitaManualForm({ cita, servicios, barberos, onClose, onGuardado }) {
   const esEdicion = !!cita
@@ -32,7 +33,11 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
   // campo): la validación vive aquí y se muestra bajo cada campo.
   const [erroresCampos, setErroresCampos] = useState({})
 
-  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value })
+  // El teléfono se limpia al escribir: solo dígitos y 10 como máximo.
+  const handleChange = (e) => {
+    const { name, value } = e.target
+    setForm({ ...form, [name]: name === 'telefono' ? normalizarTelefono(value) : value })
+  }
 
   // Al elegir un servicio del catálogo se propone su precio. El campo sigue siendo
   // editable: el total real lo cobra el barbero en sucursal.
@@ -47,9 +52,7 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
   }
 
   /* ---- Validación de los datos ----
-     La regla del teléfono es la de `validarTelefono`, que reutiliza la de
-     `telefonoParaWhatsApp`: si el número no sirve para un WhatsApp, no
-     sirve para una cita. */
+     El teléfono se valida con la misma regla que el flujo público: 10 dígitos. */
   const validarDatos = () => {
     const errores = validarObligatorios(form, {
       nombre: 'Escribe el nombre del cliente.',
@@ -59,7 +62,7 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
       hora: 'Elige la hora de la cita.',
     })
     const problemaTelefono = String(form.telefono ?? '').trim()
-      ? validarTelefono(form.telefono)
+      ? validarTelefonoMexico(form.telefono)
       : null
     if (problemaTelefono) errores.telefono = problemaTelefono
     return errores

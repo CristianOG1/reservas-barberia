@@ -272,6 +272,13 @@ alter table public.citas
   add constraint citas_estado_valido
   check (estado is null or estado in ('pendiente','confirmada','en_curso','completada','cancelada'));
 
+-- NOT VALID: hay filas historicas cortas; sigue validando inserts y updates nuevos.
+alter table public.citas
+  drop constraint if exists citas_telefono_valido;
+alter table public.citas
+  add constraint citas_telefono_valido
+  check (char_length(regexp_replace(telefono, '\D', '', 'g')) = 10) not valid;
+
 -- Normaliza los estados existentes con mayuscula inicial.
 -- Es una operacion de DATOS: en una base nueva no hay nada que normalizar.
 update public.citas

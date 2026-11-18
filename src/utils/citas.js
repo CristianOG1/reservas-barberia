@@ -44,6 +44,26 @@ export function normalizar(texto) {
     .trim()
 }
 
+// Solo dígitos, máximo 10: se usa al escribir para no aceptar otro formato.
+export function normalizarTelefono(valor) {
+  return String(valor ?? '').replace(/\D/g, '').slice(0, 10)
+}
+
+// 10 dígitos exactos y no todos el mismo (0000000000 no es un teléfono).
+export function esTelefonoValido(valor) {
+  const digitos = String(valor ?? '').replace(/\D/g, '')
+  return /^\d{10}$/.test(digitos) && !/^(\d)\1{9}$/.test(digitos)
+}
+
+// Mensaje de error, o null si el teléfono sirve. Fuente única del flujo público y manual.
+export function validarTelefonoMexico(telefono) {
+  const digitos = String(telefono ?? '').replace(/\D/g, '')
+  if (!digitos) return 'Escribe tu teléfono para confirmar la cita.'
+  if (digitos.length !== 10) return 'El teléfono debe tener exactamente 10 dígitos.'
+  if (!esTelefonoValido(digitos)) return 'El teléfono no es válido: no puede repetir el mismo dígito.'
+  return null
+}
+
 /**
  * Una cita puede traer varios servicios: `citas.servicio` los guarda unidos con
  * ', ' (el flujo público permite selección múltiple desde 2026-10).
