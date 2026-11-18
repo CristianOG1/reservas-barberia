@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
 import { useBarberia } from '../context/useBarberia'
+import { useConfiguracion } from '../context/useConfiguracion'
 import { rutaInicioPorRol } from '../utils/rutaInicioPorRol'
 
 // Íconos del menú móvil. SVG inline: el proyecto no usa librerías de iconos.
@@ -34,9 +35,9 @@ const enlaces = [
 export default function Navbar() {
   const navigate = useNavigate()
   const { session, logout, rol } = useAuth()
-  // El nombre del negocio sale de la barbería resuelta por el contexto.
   const { barberia } = useBarberia()
-  const nombreBarberia = barberia?.nombre || 'Nombre Barberia'
+  const { configuracion } = useConfiguracion()
+  const nombreBarberia = configuracion.nombre || barberia?.nombre || 'Nombre Barberia'
 
   // Extraemos datos del usuario si existe sesión
   const user = session?.user
@@ -81,9 +82,17 @@ export default function Navbar() {
       <div className="relative z-40 flex items-center justify-between gap-4 px-4 py-4 md:px-8">
         {/* Logo */}
         <div className="flex items-center gap-3 cursor-pointer" onClick={irAlInicio}>
-          <div className="w-9 h-9 bg-amber-100 rounded-md flex items-center justify-center text-neutral-900 font-bold">
-            K
-          </div>
+          {configuracion.logo ? (
+            <img
+              src={configuracion.logo}
+              alt={nombreBarberia}
+              className="w-9 h-9 shrink-0 rounded-lg object-cover"
+            />
+          ) : (
+            <div className="w-9 h-9 bg-amber-100 rounded-md flex items-center justify-center text-neutral-900 font-bold">
+              {nombreBarberia.charAt(0) || 'K'}
+            </div>
+          )}
           <div>
             <p className="text-white text-sm font-semibold leading-tight">{nombreBarberia}</p>
             <p className="text-neutral-400 text-xs leading-tight">Cortes de Cabello y Barba</p>

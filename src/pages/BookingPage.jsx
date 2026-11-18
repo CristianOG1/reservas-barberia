@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
 import { useBarberia } from '../context/useBarberia'
 import { useConfiguracion } from '../context/useConfiguracion'
@@ -60,6 +60,7 @@ export default function BookingPage() {
   const barberoIdElegido = barberoElegido?.id || null
 
   const [form, setForm] = useState(borrador?.form ?? { nombre: '', telefono: '', correo: '', notas: '' })
+  const [searchParams] = useSearchParams()
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value })
 
   // Aviso por campo de los datos del titular (paso 3). Se vacía en cuanto se
@@ -97,10 +98,20 @@ export default function BookingPage() {
         if (!vigente) return
         if (error) console.error(error)
         setServicios(data || [])
+        // Preseleccionar servicio desde ?servicio= si no hay borrador activo.
+        if (serviciosElegidos.length === 0) {
+          const servicioParam = searchParams.get('servicio')
+          if (servicioParam) {
+            const encontrado = (data || []).find((s) =>
+              s.nombre.trim().toLowerCase() === servicioParam.trim().toLowerCase()
+            )
+            if (encontrado) setServiciosElegidos([encontrado])
+          }
+        }
         setCargandoServicios(false)
       })
     return () => { vigente = false }
-  }, [barberiaId])
+  }, [barberiaId, searchParams, serviciosElegidos])
 
   /* ---- Productos desde la base de datos ----
      La lectura pública de `productos` para `anon` ya existe (política "Lectura

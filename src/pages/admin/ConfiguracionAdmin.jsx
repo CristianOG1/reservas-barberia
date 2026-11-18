@@ -158,6 +158,9 @@ function FormularioConfiguracion({ configuracion }) {
       )
       if (error) throw error
 
+      // Mantén barberias.nombre sincronizado con configuracion.nombre.
+      await supabase.from('barberias').update({ nombre: form.nombre.trim() }).eq('id', barberiaId)
+
       // El sidebar se actualiza al instante con la fila recién guardada.
       await refrescar()
       setArchivoLogo(null)

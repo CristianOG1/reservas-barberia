@@ -1182,6 +1182,11 @@ export default function CitasAdmin() {
                                   Primera visita
                                 </span>
                               )}
+                              {c.cliente_id && (
+                                <span className="mt-1 inline-block text-[10px] font-semibold uppercase tracking-wide text-primary">
+                                  Cuenta vinculada
+                                </span>
+                              )}
                             </div>
                           </div>
                         </td>

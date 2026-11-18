@@ -48,6 +48,12 @@ export function ConfiguracionProvider({ children }) {
         if (error) console.error(error)
         setConfiguracion(data ?? CONFIG_VACIA)
         setCargando(false)
+        // Título y favicon dinámicos por barbería.
+        const cfg = data ?? CONFIG_VACIA
+        if (cfg.nombre) document.title = cfg.nombre
+        else document.title = 'BarberWeb'
+        const icono = document.getElementById('favicon')
+        if (icono) icono.href = cfg.logo || '/favicon.svg'
       })
     return () => { vigente = false }
   }, [barberiaId])

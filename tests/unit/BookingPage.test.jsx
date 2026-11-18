@@ -10,7 +10,7 @@
 // de la fecha en la que se ejecuten. El sessionStorage es el real de jsdom.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useLocation } from 'react-router-dom'
 import BookingPage from '../../src/pages/BookingPage'
@@ -488,6 +488,25 @@ describe('BookingPage', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByText('Guardamos lo que elegiste: al iniciar sesión regresas aquí para confirmar.')
+    ).toBeInTheDocument()
+  })
+
+  it('preselecciona el servicio desde ?servicio= al llegar de la landing', async () => {
+    configurarBase()
+    montar({ ruta: '/agendar?servicio=Corte%20de%20cabello' })
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Corte de cabello' })).toBeInTheDocument()
+    })
+    // La tarjeta del servicio debe quedar marcada como seleccionada.
+    const tarjeta = screen
+      .getByRole('heading', { name: 'Corte de cabello' })
+      .closest('button')
+    expect(tarjeta).toHaveClass('border-sky-500')
+    expect(within(tarjeta).getByText('✓')).toBeInTheDocument()
+    // El resumen lateral ya lo refleja.
+    expect(
+      screen.getByText('Corte de cabello', { selector: 'span' })
     ).toBeInTheDocument()
   })
 })

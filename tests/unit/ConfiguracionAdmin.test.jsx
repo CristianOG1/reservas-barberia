@@ -298,3 +298,41 @@ describe('ConfiguracionAdmin · bloques horarios (F-13)', () => {
     ])
   })
 })
+
+describe('ConfiguracionAdmin · identidad unificada (Bloque 3)', () => {
+  /** Devuelve la llamada de escritura a `barberias`. */
+  function llamadaBarberias() {
+    return supabaseMock.llamadas.find(
+      (c) => c.tipo === 'query' && c.tabla === 'barberias' && c.operacion === 'update'
+    )
+  }
+
+  it('al guardar, actualiza también el nombre en barberias para no divergir', async () => {
+    const user = userEvent.setup()
+    supabaseMock.on('barberias', 'update', { data: [], error: null })
+    montar({ configuracion: { ...CONFIGURACION, nombre: 'Salon Demo Premium' } })
+
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => {
+      expect(llamadaBarberias()).toBeDefined()
+    })
+    expect(llamadaBarberias().carga.nombre).toBe('Salon Demo Premium')
+    expect(llamadaBarberias().filtros).toEqual([{ op: 'eq', columna: 'id', valor: 'b1' }])
+  })
+
+  it('al guardar, recorta espacios del nombre antes de escribir en barberias', async () => {
+    const user = userEvent.setup()
+    supabaseMock.on('barberias', 'update', { data: [], error: null })
+    montar({ configuracion: { ...CONFIGURACION, nombre: '  Salon Demo  ' } })
+
+    await user.clear(screen.getByLabelText('Nombre de la barbería *'))
+    await user.type(screen.getByLabelText('Nombre de la barbería *'), '  Salon Demo  ')
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => {
+      expect(llamadaBarberias()).toBeDefined()
+    })
+    expect(llamadaBarberias().carga.nombre).toBe('Salon Demo')
+  })
+})

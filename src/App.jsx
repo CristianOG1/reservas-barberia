@@ -214,7 +214,8 @@ function Contenido() {
         }
       />
 
-      <Route element={<LayoutPublico />}>
+      {/* El Navbar lee useConfiguracion: el layout público necesita el provider. */}
+      <Route element={<ConfiguracionProvider><LayoutPublico /></ConfiguracionProvider>}>
         <Route
           index
           element={
