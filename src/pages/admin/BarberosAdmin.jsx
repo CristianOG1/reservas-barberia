@@ -6,7 +6,6 @@ import { useBarberia } from '../../context/useBarberia'
 import { barberosDisponibles, barberosEnPausa, estaDisponible } from '../../utils/resumen'
 import BarberoForm from './BarberoForm'
 
-/* ===== Íconos ===== */
 
 function IconoBuscar() {
   return (
@@ -57,7 +56,6 @@ function IconoEliminar() {
   )
 }
 
-/* ===== Configuración ===== */
 
 function Stars({ rating, total }) {
   const r = Math.round(rating)
@@ -175,19 +173,14 @@ export default function BarberosAdmin() {
   const citasPorBarbero = (barbero) =>
     citasHoy.filter((c) => c.barbero_id === barbero.id).length
 
-  /* ---- Métricas ----
-     Todas salen de datos reales: la disponibilidad de cada barbero y las citas
-     que hay hoy. NO hay ninguna capacidad inventada: el salón no tiene un
-     modelo de horarios (AGENTS.md §18.6) y una cifra de «slots» sería ficción. */
+  // Métricas con datos reales; no hay capacidad estimada (no hay modelo de slots).
   const disponibles = barberosDisponibles(barberos)
   const noDisponibles = barberosEnPausa(barberos)
   const citasHoyCount = citasHoy.length
   const barberosConCitas = barberos.filter((b) => citasPorBarbero(b) > 0).length
-  // Escala RELATIVA de las barras: el barbero más ocupado del día. No hay
-  // ningún máximo fijo, porque el salón no define cuántos huecos tiene.
+  // Barras relativas al barbero más ocupado: no hay máximo fijo de huecos.
   const maxCitasPorBarbero = Math.max(1, ...barberos.map(citasPorBarbero))
 
-  /* ---- Filtrado ---- */
   const filtrados = barberos.filter((b) => {
     const coincideBusqueda = !busqueda || [
       b.nombre, b.especialidad

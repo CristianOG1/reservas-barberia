@@ -1,10 +1,5 @@
-// tests/helpers/fixturesCatalogo.jsx
-// Datos y montaje compartidos por las pruebas de los CRUD del panel:
-// ServiciosAdmin/ServicioForm, ProductosAdmin/ProductoForm y
-// BarberosAdmin/BarberoForm.
-//
-// El reloj va fijo en un miercoles para que las metricas y los filtros no
-// dependan del dia en el que se ejecuten las pruebas.
+// Fixtures de los CRUD del panel (Servicios/Productos/Barberos).
+// Reloj fijo en miércoles para que métricas y filtros sean deterministas.
 
 import { afterEach, beforeEach, vi } from 'vitest'
 import { screen } from '@testing-library/react'
@@ -23,16 +18,8 @@ export const AHORA = new Date('2026-03-11T10:00:00')
 
 export const BARBERIA = { id: 'b1', nombre: 'Salon Demo', slug: 'kromatik' }
 
-/**
- * Catalogo de servicios de prueba.
- *
- * Las duraciones mezclan los dos formatos que conviven en la base: `duracion`
- * es TEXT y puede traer '30' o '50 min' (AGENTS.md §18.32).
- *
- * Con estos datos las metricas del panel son:
- *   Catalogo 3 (3 categorias) · Tarifa promedio $170 (rango $120-$240)
- *   Duracion promedio 47 min (servicios de 30 a 60 min)
- */
+// Duraciones '30' y '50 min': los dos formatos que conviven en la columna TEXT (§18.32).
+// Metricas resultantes: 3 servicios/3 categorias, tarifa promedio $170, duracion promedio 47 min.
 export const SERVICIOS = [
   {
     id: 's1', nombre: 'Corte de cabello', categoria: 'Cabello',
@@ -51,13 +38,7 @@ export const SERVICIOS = [
   },
 ]
 
-/**
- * Catalogo de productos de prueba.
- *
- * Con estos datos las metricas del panel son:
- *   Catalogo 3 (3 activos) · Valor del inventario $2,820 (15 unidades)
- *   Alerta de reabastecimiento 2 (los que tienen 5 o menos unidades)
- */
+// Metricas resultantes: 3 productos/3 activos, inventario $2,820 (15 unidades), 2 con stock bajo.
 export const PRODUCTOS = [
   {
     id: 'p1', nombre: 'Aceite para barba', categoria: 'Barba',
@@ -76,11 +57,7 @@ export const PRODUCTOS = [
   },
 ]
 
-/**
- * Equipo de prueba: uno disponible y otro en pausa.
- *
- * `rating` es numerico y `total_resenas` un entero, tal como los guarda la BD.
- */
+// Uno disponible y otro en pausa; `rating` numerico y `total_resenas` entero, como en la BD.
 export const BARBEROS = [
   {
     id: 'bar-1', nombre: 'Barbero Uno', especialidad: 'Corte clasico',
@@ -94,7 +71,6 @@ export const BARBEROS = [
   },
 ]
 
-/** Registra el reloj fijo. Se llama una vez por archivo de prueba. */
 export function usarRelojFijo() {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true, now: AHORA })
@@ -104,18 +80,12 @@ export function usarRelojFijo() {
   })
 }
 
-/**
- * El "hoy" que usa el panel.
- *
- * `BarberosAdmin` lo calcula con `new Date().toISOString().split('T')[0]`, que
- * es fecha **UTC**, no local. Las citas de prueba usan esta misma expresion
- * para que el conteo no dependa de la zona horaria de la maquina.
- */
+// `BarberosAdmin` usa toISOString() (UTC, no local); las citas usan lo mismo para que el conteo
+// no dependa de la zona horaria de la maquina.
 export function hoyDeLaApp() {
   return new Date().toISOString().split('T')[0]
 }
 
-/** Citas de hoy para el panel de barberos: dos del Uno y una del Dos. */
 export function citasDeHoy() {
   const hoy = hoyDeLaApp()
   return [
@@ -125,8 +95,6 @@ export function citasDeHoy() {
   ]
 }
 
-/* ===== Montajes ===== */
-
 const CONTEXTO_BARBERIA = {
   barberia: BARBERIA,
   cargando: false,
@@ -134,7 +102,6 @@ const CONTEXTO_BARBERIA = {
   sinSlug: false,
 }
 
-/** Monta el catalogo de servicios. */
 export function montarServiciosAdmin({ datos = [], error = null } = {}) {
   supabaseMock.on(
     'servicios',
@@ -147,7 +114,6 @@ export function montarServiciosAdmin({ datos = [], error = null } = {}) {
   })
 }
 
-/** Monta el formulario de un servicio (alta, edicion o detalle). */
 export function montarServicioForm({ servicio = null, soloLectura = false, onGuardado } = {}) {
   return renderWithProviders(
     <ServicioForm
@@ -161,7 +127,6 @@ export function montarServicioForm({ servicio = null, soloLectura = false, onGua
   )
 }
 
-/** Monta el catalogo de productos. */
 export function montarProductosAdmin({ datos = [], error = null } = {}) {
   supabaseMock.on(
     'productos',
@@ -174,7 +139,6 @@ export function montarProductosAdmin({ datos = [], error = null } = {}) {
   })
 }
 
-/** Monta el formulario de un producto (alta o edicion). */
 export function montarProductoForm({ producto = null, onGuardado } = {}) {
   return renderWithProviders(
     <ProductoForm
@@ -187,7 +151,6 @@ export function montarProductoForm({ producto = null, onGuardado } = {}) {
   )
 }
 
-/** Monta el equipo de barberos. */
 export function montarBarberosAdmin({ datos = [], error = null } = {}) {
   supabaseMock.on(
     'barberos',
@@ -201,7 +164,6 @@ export function montarBarberosAdmin({ datos = [], error = null } = {}) {
   })
 }
 
-/** Monta el formulario de un barbero (alta o edicion). */
 export function montarBarberoForm({ barbero = null, onGuardado } = {}) {
   return renderWithProviders(
     <BarberoForm
@@ -213,33 +175,23 @@ export function montarBarberoForm({ barbero = null, onGuardado } = {}) {
   )
 }
 
-/* ===== Utilidades ===== */
-
-/** Devuelve la llamada al mock de una tabla y operacion concretas. */
 export function llamadaDe(tabla, operacion) {
   return supabaseMock.llamadas.find(
     (c) => c.tipo === 'query' && c.tabla === tabla && c.operacion === operacion
   )
 }
 
-/** Devuelve todas las llamadas de escritura a una tabla. */
 export function escriturasDe(tabla) {
   return supabaseMock.llamadas.filter(
     (c) => c.tipo === 'query' && c.tabla === tabla && c.operacion !== 'select'
   )
 }
 
-/** Devuelve la tarjeta de metricas cuyo pie de foto es ese texto. */
 export function tarjetaDe(titulo) {
   return screen.getByText(titulo).closest('div.rounded-xl')
 }
 
-/**
- * Lee el texto de un `Blob`.
- *
- * El `Blob` de jsdom no implementa `text()` ni `arrayBuffer()`: solo tiene
- * `slice`, `size` y `type`. Se usa el `FileReader`, que si lo implementa.
- */
+// El Blob de jsdom no tiene text()/arrayBuffer(); se lee con FileReader.
 export function leerTexto(blob) {
   return new Promise((resolver, rechazar) => {
     const lector = new FileReader()
@@ -249,11 +201,7 @@ export function leerTexto(blob) {
   })
 }
 
-/**
- * jsdom no implementa `URL.createObjectURL` (lo usan la vista previa de las
- * imagenes y la exportacion de la carta). Este helper lo sustituye por un
- * `vi.fn` y devuelve como restaurarlo.
- */
+// jsdom no implementa URL.createObjectURL (vista previa y exportacion de la carta).
 export function stubObjectUrl() {
   const antes = { crear: URL.createObjectURL, revocar: URL.revokeObjectURL }
   const crear = vi.fn(() => 'blob:mock')

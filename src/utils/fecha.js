@@ -58,11 +58,7 @@ export function etiquetaFecha(iso) {
   return `${dia.charAt(0).toUpperCase()}${dia.slice(1)} ${texto}`
 }
 
-/**
- * Marca de tiempo de un recordatorio automático, para el `title` de la etiqueta.
- * Las columnas `recordatorio_24h_enviado_at` y `recordatorio_2h_enviado_at` las
- * escribe la Edge Function con `now()`, así que llegan como timestamptz ISO.
- */
+// Marca timestamptz ISO de la Edge Function, para el title de la etiqueta.
 export function formatRecordatorio(iso) {
   if (!iso) return ''
   const n = new Date(iso)

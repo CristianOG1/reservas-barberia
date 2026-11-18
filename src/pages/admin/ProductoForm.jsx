@@ -97,7 +97,6 @@ export default function ProductoForm({ producto, categorias = [], soloLectura = 
         onSubmit={handleSubmit}
         className="flex max-h-[90vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
       >
-        {/* ===== Header del modal ===== */}
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-amber">Inventario del salón</p>
           <h3 className="font-serif text-lg text-navy">
@@ -110,7 +109,6 @@ export default function ProductoForm({ producto, categorias = [], soloLectura = 
           </p>
         </div>
 
-        {/* ===== Imagen ===== */}
         <div className="flex items-center gap-4">
           <img
             src={previewUrl || 'https://placehold.co/80x80?text=%20'}
@@ -135,7 +133,6 @@ export default function ProductoForm({ producto, categorias = [], soloLectura = 
           )}
         </div>
 
-        {/* ===== Nombre ===== */}
         <div>
           <label htmlFor="nombre" className="block text-sm text-slate">Nombre *</label>
           <input
@@ -150,7 +147,6 @@ export default function ProductoForm({ producto, categorias = [], soloLectura = 
           />
         </div>
 
-        {/* ===== Categoría, con sugerencias del catálogo ===== */}
         <div>
           <label htmlFor="categoria" className="block text-sm text-slate">Categoría *</label>
           <input
@@ -169,7 +165,6 @@ export default function ProductoForm({ producto, categorias = [], soloLectura = 
           </datalist>
         </div>
 
-        {/* ===== Descripción ===== */}
         <div>
           <label htmlFor="descripcion" className="block text-sm text-slate">Descripción</label>
           <textarea
@@ -184,7 +179,6 @@ export default function ProductoForm({ producto, categorias = [], soloLectura = 
           />
         </div>
 
-        {/* ===== Precio ===== */}
         <div>
           <label htmlFor="precio" className="block text-sm text-slate">Precio de venta (MXN) *</label>
           <input
@@ -202,7 +196,6 @@ export default function ProductoForm({ producto, categorias = [], soloLectura = 
           />
         </div>
 
-        {/* ===== Stock ===== */}
         <div>
           <label htmlFor="stock" className="block text-sm text-slate">
             Unidades en stock *
@@ -229,7 +222,6 @@ export default function ProductoForm({ producto, categorias = [], soloLectura = 
 
         {errorMsg && <p role="alert" className="text-sm text-red-600">{errorMsg}</p>}
 
-        {/* ===== Acciones ===== */}
         {soloLectura ? (
           <button
             type="button"

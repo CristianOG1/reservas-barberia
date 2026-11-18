@@ -126,7 +126,6 @@ export default function ResumenPage() {
   // `citas.hora` llega como 'HH:MM:SS'; se muestra 'HH:MM' (igual que CitasAdmin).
   const formatearHora = (valor) => (valor ? String(valor).slice(0, 5) : '—')
 
-  // ---- Cifras del panel: todas salen de los datos de arriba ----
   const pendientesHoy = contarPorEstado(citasHoy, 'pendiente')
   const disponibles = barberosDisponibles(barberos)
   const enPausa = barberosEnPausa(barberos)

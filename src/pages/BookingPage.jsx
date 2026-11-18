@@ -14,16 +14,8 @@ const PASOS = ['Servicio', 'Fecha & Hora', 'Tus Datos']
 
 const ETIQUETAS_DIA = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM']
 
-// Fecha local en YYYY-MM-DD. NO usar toISOString(): convierte a UTC y en México
-// (UTC-6) devuelve el día anterior.
-// lunes de la semana a la que pertenece la fecha (la semana empieza en lunes)
-// Solo presentación: '14:30' → '2:30 PM'
-// `duracion` es TEXT: puede venir '30' o '50 min'.
-// Igual que `ServiciosAdmin.aMinutos()`: extrae el primer número del texto.
-/* ---- Borrador de la reservación ----
-   Si el cliente llega al final sin sesión, se guarda lo que eligió en
-   sessionStorage, se le manda a /login y al volver se restaura todo. Se borra
-   al confirmar la cita o a las 2 horas. */
+// Borrador en sessionStorage: sin sesión se guarda la selección, /login la
+// restaura al volver, y se borra al confirmar o a las 2 horas.
 export default function BookingPage() {
   const navigate = useNavigate()
   // `cargando`: mientras Supabase recupera la sesión guardada (al recargar la página).
@@ -31,7 +23,6 @@ export default function BookingPage() {
   // La cita pertenece a UNA barbería: lecturas, RPC e insert llevan su id.
   const { barberia } = useBarberia()
   const barberiaId = barberia?.id ?? null
-  // Configuración de la barbería: bloques de horario y días cerrados.
   const { configuracion } = useConfiguracion()
   const bloques = bloquesDeConfig(configuracion)
   const diasCerrados = diasCerradosDeConfig(configuracion)
@@ -49,7 +40,6 @@ export default function BookingPage() {
   // Selección múltiple: el id va de vuelta en el objeto para deseleccionar fácil.
   const [serviciosElegidos, setServiciosElegidos] = useState(borrador?.serviciosElegidos ?? [])
 
-  // Productos (opcional, selección múltiple)
   const [productos, setProductos] = useState([])
   const [productosElegidos, setProductosElegidos] = useState(borrador?.productosElegidos ?? [])
 
@@ -86,23 +76,19 @@ export default function BookingPage() {
 
   const [estadoEnvio, setEstadoEnvio] = useState('idle') // idle | enviando | error | slot | exito
 
-  // Panel de confirmación final: el botón del sidebar solo lo abre; el insert
-  // ocurre al pulsar "Confirmar reservación" dentro del modal.
+  // El sidebar solo abre este modal; el insert ocurre al confirmar dentro de él.
   const [mostrarResumen, setMostrarResumen] = useState(false)
 
   const [horasOcupadas, setHorasOcupadas] = useState([])
 
-  // Navegación de semanas
   const [semanaBase, setSemanaBase] = useState(() => lunesDe(borrador?.semanaBase ? new Date(borrador.semanaBase) : new Date()))
 
-  // Reloj congelado al montar: `new Date()` dentro del render es impuro
-  // (react-hooks/purity) y haría que "hoy" cambiara entre renders.
+  // Reloj congelado al montar: `new Date()` en el render viola react-hooks/purity.
   const [reloj] = useState(() => new Date())
   const hoyISO = FechaISO(reloj)
   const ahoraMin = reloj.getHours() * 60 + reloj.getMinutes()
   const lunesActual = useMemo(() => lunesDe(reloj), [reloj])
 
-  /* ---- Servicios desde la base de datos ---- */
   useEffect(() => {
     if (!barberiaId) return
     let vigente = true
@@ -130,10 +116,7 @@ export default function BookingPage() {
     return () => { vigente = false }
   }, [barberiaId, searchParams, serviciosElegidos])
 
-  /* ---- Productos desde la base de datos ----
-     La lectura pública de `productos` para `anon` ya existe (política "Lectura
-     publica"). Si la consulta falla, la lista queda vacía y la sección entera no
-     se muestra: los productos son opcionales y no deben romper el flujo. */
+  // Los productos son opcionales: si falla la lectura, la sección no se muestra.
   useEffect(() => {
     if (!barberiaId) return
     let vigente = true
@@ -150,10 +133,7 @@ export default function BookingPage() {
     return () => { vigente = false }
   }, [barberiaId])
 
-  /* ---- Barberos disponibles desde la base de datos ----
-     La lectura pública de `barberos` para `anon` ya existe (política "Lectura
-     publica"). Solo se piden los que están `disponible = true` y son de la
-     barbería actual. */
+  // Solo barberos disponibles de la barbería actual.
   useEffect(() => {
     if (!barberiaId) return
     let vigente = true
@@ -177,14 +157,8 @@ export default function BookingPage() {
   // Duración estimada: solo la de los servicios. Los productos no ocupan silla.
   const duracionTotalMin = serviciosElegidos.reduce((a, s) => a + duracionAMinutos(s.duracion), 0)
 
-  /* ---- Horas ya ocupadas ----
-   Se consulta por RPC: `citas` no es legible por `anon` (expondría nombre,
-   teléfono y correo). `horas_ocupadas` es SECURITY DEFINER y devuelve
-   únicamente columnas `hora`.
-
-   Con barbero concreto devuelve las horas ocupadas de ese barbero; con
-   "Cualquier barbero" devuelve las horas en las que ya no queda ninguno
-   disponible. Siempre dentro de la barbería actual. */
+  // RPC SECURITY DEFINER: `citas` no es legible por anon y solo devuelve horas.
+  // Sin barbero concreto, devuelve las horas en que no queda ninguno libre.
   const cargarHorasOcupadas = async (fecha, barberoId) => {
     if (!fecha || !barberiaId) return
     const { data, error } = await supabase.rpc('horas_ocupadas', {
@@ -202,9 +176,7 @@ export default function BookingPage() {
   }
 
   useEffect(() => {
-    // Sin fecha (o sin barbería) no hay nada que pedir. Las horas se limpian al
-    // elegir el día (handler), no aquí, para no llamar a setState de forma
-    // síncrona en el efecto.
+    // Las horas se limpian en el handler, no aquí: setState síncrono en el efecto.
     if (!fechaElegida || !barberiaId) return
     let vigente = true
     supabase
@@ -226,7 +198,6 @@ export default function BookingPage() {
     return () => { vigente = false }
   }, [fechaElegida, barberoIdElegido, barberiaId, duracionTotalMin])
 
-  /* ---- Calendario: 7 días de la semana, generado desde la fecha real ---- */
   const dias = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
       const date = new Date(semanaBase)
@@ -243,8 +214,7 @@ export default function BookingPage() {
     })
   }, [semanaBase, hoyISO, diasCerrados])
 
-  // Mes/año reales: se toma el día del medio de la semana para que una semana a
-  // caballo entre dos meses no se etiquete con el mes equivocado.
+  // Día del medio de la semana: evita etiquetar mal una semana a caballo entre meses.
   const etiquetaMes = useMemo(() => {
     const medio = dias[3].fecha
     const texto = new Date(`${medio}T00:00:00`).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })
@@ -263,15 +233,13 @@ export default function BookingPage() {
     setHorasOcupadas([]) // limpia las del día anterior hasta que responda la RPC
   }
 
-  // Cambiar de barbero cambia la disponibilidad del día, así que la hora
-  // seleccionada deja de ser válida.
+  // Otro barbero cambia la disponibilidad: la hora elegida deja de ser válida.
   const elegirBarbero = (barbero) => {
     setBarberoElegido(barbero)
     setHoraElegida(null)
     setHorasOcupadas([])
   }
 
-  /* ---- Selección múltiple ---- */
   const alternarServicio = (s) => {
     setServiciosElegidos((prev) =>
       prev.some((x) => x.nombre === s.nombre)
@@ -298,19 +266,13 @@ export default function BookingPage() {
     return true
   }
 
-  /* ---- Totales: servicios + productos ---- */
   const totalServicios = serviciosElegidos.reduce((a, s) => a + (Number(s.costo) || 0), 0)
   const totalProductos = productosElegidos.reduce((a, p) => a + (Number(p.precio) || 0), 0)
   const total = totalServicios + totalProductos
 
-  // Duración estimada: solo la de los servicios. Los productos no ocupan silla.
-
-  /* ---- Reservar requiere sesión ----
-     Explorar y elegir es libre; al confirmar se pide iniciar sesión. Si no hay
-     sesión se guarda la selección y se manda a /login con `volverA`, para que
-     al entrar regrese aquí. Devuelve true si redirigió. */
+  // Elegir es libre; al confirmar sin sesión se guarda el borrador y se va a
+  // /login con `volverA`. Devuelve true si redirigió.
   const requiereLogin = () => {
-    // Aún no sabemos si hay sesión: no se redirige ni se deja pasar, solo se espera.
     if (cargandoSesion) return true
     if (session) return false
     guardarBorrador({
@@ -327,9 +289,7 @@ export default function BookingPage() {
     return true
   }
 
-  /* ---- Validación de los datos del titular (paso 3) ----
-     Los campos del paso 3 NO están dentro de un `<form>`: el `required` del
-     navegador no se aplica, así que se validan aquí y se avisa **por campo**. */
+  // Sin `<form>` no aplica el `required` del navegador: se valida aquí por campo.
   const validarDatosCliente = () => {
     const errores = validarObligatorios(form, {
       nombre: 'Escribe tu nombre completo.',
@@ -346,13 +306,11 @@ export default function BookingPage() {
     return errores
   }
 
-  /* ---- Guardado ---- */
   const handleConfirmar = async () => {
     // Seguro extra: aunque el modal esté abierto, sin sesión no se inserta nada.
     if (requiereLogin()) return
 
-    // Red de seguridad: si los datos cambiaron con el panel abierto, se
-    // validan antes de insertar.
+    // Revalida por si los datos cambiaron con el modal abierto.
     const errores = validarDatosCliente()
     if (Object.keys(errores).length > 0) {
       setErroresCampos(errores)
@@ -363,10 +321,7 @@ export default function BookingPage() {
 
     setEstadoEnvio('enviando')
 
-    // Si el cliente eligió "Cualquier barbero", se le asigna el primer barbero
-    // disponible y libre en ese horario. La RPC devuelve solo el id; si no hay
-    // ninguno (salón sin barberos activos) devuelve NULL y la cita se guarda
-    // sin barbero, como antes.
+    // "Cualquier barbero" se resuelve con la RPC; sin libre se avisa al cliente.
     let barberoId = barberoIdElegido
     if (!barberoId) {
       const { data, error } = await supabase.rpc('asignar_barbero', {
@@ -383,15 +338,13 @@ export default function BookingPage() {
       }
     }
 
-    // No se envía `addon` (la columna existe pero la página ya no ofrece el
-    // add-on) ni `estado`: la columna tiene default 'pendiente' en la BD.
+    // Sin `addon` ni `estado`: este último tiene default 'pendiente' en la BD.
     const { error } = await supabase.from('citas').insert([{
       nombre: form.nombre,
       telefono: form.telefono,
       correo: form.correo,
       notas: form.notas,
-      // Varios servicios van como texto separado por ', ' porque la columna es
-      // TEXT y `CitasAdmin` sigue leyéndola como una sola cadena.
+      // Texto separado por ', ': la columna es TEXT y el admin lo lee así.
       servicio: serviciosElegidos.map((s) => s.nombre).join(', '),
       productos: productosElegidos.map((p) => ({ nombre: p.nombre, precio: Number(p.precio) || 0 })),
       fecha: fechaElegida,          // 'YYYY-MM-DD' en hora local
@@ -405,14 +358,12 @@ export default function BookingPage() {
 
     if (error) {
       console.error(error)
-      // 23505 = unique_violation: el índice citas_slot_unico detectó que otro
-      // cliente tomó el slot entre la consulta y este insert.
+      // 23505: otro cliente tomó el slot entre la consulta y este insert.
       if (error.code === '23505') {
         setHoraElegida(null)
         await cargarHorasOcupadas(fechaElegida, barberoIdElegido)
         setEstadoEnvio('slot')
-        // El horario se liberó: hay que rehacer la fecha/hora, así que el modal
-        // se cierra para no dejar una pantalla de confirmación obsoleta.
+        // Se cierra el modal: la confirmación ya no corresponde al nuevo horario.
         setMostrarResumen(false)
         setPasoActual(2)
       } else {
@@ -424,8 +375,7 @@ export default function BookingPage() {
     }
   }
 
-  // Al fallar el insert dentro del modal se mantiene abierto para reintentar;
-  // el mensaje de slot vive en el sidebar, así que ahí se muestra.
+  // El modal se cierra al fallar; el aviso de slot se muestra en el sidebar.
   const volverAAgregar = () => {
     setMostrarResumen(false)
     setEstadoEnvio('idle')
@@ -550,7 +500,6 @@ export default function BookingPage() {
                 </div>
               )}
 
-              {/* ===== Selección de barbero (opcional) ===== */}
               <div className="mt-10">
                 <p className="text-sky-400 text-xs tracking-wide mb-2">02. BARBERO</p>
                 <h2 className="text-white text-xl font-semibold mb-4">Elige a tu barbero</h2>
@@ -638,7 +587,6 @@ export default function BookingPage() {
                 )}
               </div>
 
-              {/* ===== Productos (opcional) ===== */}
               {productos.length > 0 && (
                 <div className="mt-10">
                   <p className="text-sky-400 text-xs tracking-wide mb-2">PRODUCTOS</p>
@@ -1019,8 +967,7 @@ export default function BookingPage() {
         </div>
       </div>
 
-      {/* ===== Panel de confirmación final =====
-          Aquí ocurre el insert. El botón del sidebar solo abre este modal. */}
+      {/* Aquí ocurre el insert; el botón del sidebar solo abre este modal. */}
       {mostrarResumen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="flex max-h-[90vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-xl bg-neutral-900 border border-neutral-800 p-5 sm:p-6">

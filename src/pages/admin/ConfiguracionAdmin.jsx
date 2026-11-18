@@ -16,7 +16,6 @@ export default function ConfiguracionAdmin() {
 
   return (
     <div>
-      {/* ===== Header ===== */}
       <div className="mb-6">
         <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-amber">
           Datos de la barberia
@@ -181,7 +180,6 @@ function FormularioConfiguracion({ configuracion }) {
       onSubmit={handleSubmit}
       className="max-w-2xl rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
     >
-      {/* ===== Logo ===== */}
         <div className="mb-5 flex items-start gap-5">
           {previewLogo ? (
             <img
@@ -209,7 +207,6 @@ function FormularioConfiguracion({ configuracion }) {
           </div>
         </div>
 
-        {/* ===== Nombre ===== */}
         <div className="mb-5">
           <label htmlFor="nombre" className="block text-sm text-slate">
             Nombre de la barbería <span className="text-red-600">*</span>
@@ -225,7 +222,6 @@ function FormularioConfiguracion({ configuracion }) {
           />
         </div>
 
-        {/* ===== Estado y Municipio ===== */}
         <div className="mb-5 grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="estado" className="block text-sm text-slate">Estado</label>
@@ -251,7 +247,6 @@ function FormularioConfiguracion({ configuracion }) {
           </div>
         </div>
 
-        {/* ===== Descripción ===== */}
         <div className="mb-5">
           <label htmlFor="descripcion" className="block text-sm text-slate">Descripción</label>
           <textarea
@@ -274,7 +269,6 @@ function FormularioConfiguracion({ configuracion }) {
           </p>
         )}
 
-        {/* ===== Días cerrados ===== */}
         <div className="mb-5">
           <label className="block text-sm text-slate mb-3">Días cerrados de la semana</label>
           <div className="grid grid-cols-7 gap-1">
@@ -304,7 +298,6 @@ function FormularioConfiguracion({ configuracion }) {
           <p className="mt-1.5 text-xs text-slate">Marca los días en que la barbería no atiende.</p>
         </div>
 
-        {/* ===== Bloques horarios ===== */}
         <div className="mb-5">
           <label className="block text-sm text-slate mb-3">Franjas horarias por bloque</label>
           <div className="space-y-3">

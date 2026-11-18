@@ -1,60 +1,40 @@
-// tests/helpers/fixturesResumen.jsx
 // Datos y montaje del resumen del panel (`ResumenPage`).
-//
-// El reloj va fijo en un miercoles (2026-03-11) para que las cifras del
-// resumen no dependan del dia en el que se ejecuten las pruebas.
+// Reloj fijo en miercoles 2026-03-11: las cifras no dependen del dia de ejecucion.
 
 import { renderWithProviders, CONFIGURACION_POR_DEFECTO } from './renderWithProviders'
 import { supabaseMock } from '../mocks/supabaseClient'
 import ResumenPage from '../../src/pages/admin/ResumenPage'
 
-/** Miercoles 2026-03-11. */
 export const HOY = '2026-03-11'
 
 export const BARBERIA = { id: 'b1', nombre: 'Salon Demo', slug: 'kromatik' }
 
-/**
- * Configuracion de la barberia. Su nombre es DISTINTO del de `barberias` a
- * proposito: asi se comprueba que el encabezado usa el de la configuracion.
- */
+// Nombre distinto a propósito del de `barberias`: comprueba que el encabezado usa este.
 export const CONFIGURACION = {
   ...CONFIGURACION_POR_DEFECTO.configuracion,
   nombre: 'Kromatik Barberia',
 }
 
-/** Catalogo de servicios: 3 servicios y 3 categorias. */
 export const SERVICIOS = [
   { id: 's1', nombre: 'Corte de cabello', categoria: 'Cabello', descripcion: '', costo: 150, duracion: '30', imagen: null },
   { id: 's2', nombre: 'Perfilado de barba', categoria: 'Barba', descripcion: '', costo: 120, duracion: '50 min', imagen: null },
   { id: 's3', nombre: 'Corte + Barba', categoria: 'Combo', descripcion: '', costo: 240, duracion: '60', imagen: null },
 ]
 
-/**
- * Catalogo de productos: 3 productos, 15 unidades y 2 con stock bajo
- * (el umbral es 5 unidades o menos).
- */
+// 3 productos, 15 unidades y 2 con stock bajo (umbral: 5 unidades o menos).
 export const PRODUCTOS = [
   { id: 'p1', nombre: 'Aceite para barba', categoria: 'Barba', descripcion: '', precio: 180, stock: 12, imagen: null },
   { id: 'p2', nombre: 'Shampoo revitalizante', categoria: 'Cabello', descripcion: '', precio: 220, stock: 3, imagen: null },
   { id: 'p3', nombre: 'Pomada mate', categoria: 'Estilizado', descripcion: '', precio: 150, stock: 0, imagen: null },
 ]
 
-/** Equipo: uno disponible y otro en pausa. */
 export const BARBEROS = [
   { id: 'bar-1', nombre: 'Barbero Uno', especialidad: 'Corte clasico', disponible: true, imagen: null },
   { id: 'bar-2', nombre: 'Barbero Dos', especialidad: 'Barba', disponible: false, imagen: null },
 ]
 
-/**
- * Citas: tres de hoy (una confirmada, una pendiente y una sin estado, que en
- * la base cuenta como pendiente) y una dentro de la ventana de 7 dias.
- *
- * Con estos datos el resumen muestra:
- *   Citas de hoy 3 (2 por confirmar) - 4 en los proximos 7 dias
- *   Productos 3 (2 con stock bajo) - 15 unidades en stock
- *   Barberos 1 de 2 (1 en pausa)
- *   Servicios 3 (3 categorias) - 6 items totales
- */
+// Tres citas hoy (confirmada, pendiente y una sin estado que cuenta como pendiente) y una en 7 dias.
+// Resumen: hoy 3 (2 por confirmar) / semana 4 · productos 3 (2 bajos, 15 uds) · barberos 1/2 · servicios 3.
 export const CITAS = [
   { id: 'c1', nombre: 'Ana', telefono: '5512345678', correo: 'ana@ejemplo.com', servicio: 'Corte de cabello', fecha: HOY, hora: '09:00:00', estado: 'confirmada', barbero_id: 'bar-1', total: 150, productos: [] },
   { id: 'c2', nombre: 'Luis', telefono: '5522222222', correo: 'luis@ejemplo.com', servicio: 'Barba', fecha: HOY, hora: '11:00:00', estado: 'pendiente', barbero_id: null, total: 120, productos: [] },
@@ -75,18 +55,7 @@ const CONTEXTO_CONFIGURACION = {
   refrescar: async () => {},
 }
 
-/**
- * Monta el resumen del panel.
- *
- * @param {object} opciones
- * @param {Array}  opciones.servicios   Catalogo de servicios
- * @param {Array}  opciones.productos   Catalogo de productos
- * @param {Array}  opciones.barberos    Equipo
- * @param {Array}  opciones.citas       Citas de la ventana de 7 dias
- * @param {object} opciones.error       Error de carga (si viene, TODAS las
- *                                      consultas fallan con el)
- * @param {object} opciones.configuracion Fila de `configuracion` a mostrar
- */
+// Con `error` fallan las cuatro consultas a la vez, como en una red caída.
 export function montarResumen({
   servicios = SERVICIOS,
   productos = PRODUCTOS,

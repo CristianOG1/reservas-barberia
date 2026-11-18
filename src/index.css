@@ -26,12 +26,7 @@
   /* Escala Tailwind compatible necesaria */
   --color-red-600: #DC2626;
 
-  /* Tipografía — el proyecto NO carga ninguna fuente externa: ni Google Fonts,
-     ni @font-face, ni CDN (ver §17 de AGENTS.md). Ambas pilas son del sistema.
-
-     Sans: cuerpo, navegación, tablas, formularios y etiquetas. Se declara
-     explícitamente para que quede nombrada como token y no dependa del default
-     implícito de Tailwind. */
+  /* Pilas del sistema: no se cargan fuentes externas (§17). */
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
 

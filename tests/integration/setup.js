@@ -1,15 +1,5 @@
-// tests/integration/setup.js
-// Guard de seguridad de las pruebas de integracion.
-//
-// Las pruebas de integracion ESCRIBEN en la base (crean barberias, citas y
-// membresias de prueba). Ejecutarlas contra produccion alteraria los datos
-// reales del piloto, asi que aqui se aborta si:
-//
-//   1. falta TEST_SUPABASE_URL, o
-//   2. la URL apunta al proyecto de produccion.
-//
-// Los datos que se crean usan el dominio reservado @ejemplo.com y se limpian
-// al final de cada suite.
+// Guard de seguridad: las pruebas ESCRIBEN en la base (barberías, citas, membresías).
+// Aborta si falta TEST_SUPABASE_URL o apunta a producción; los datos usan @ejemplo.com y se limpian al final.
 
 const REF_PRODUCCION = 'jlwwdavshkvjqfbmyzeg'
 const DOMINIO_PRODUCCION = 'gools.com.mx'

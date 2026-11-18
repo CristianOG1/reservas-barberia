@@ -64,10 +64,7 @@ export function validarTelefonoMexico(telefono) {
   return null
 }
 
-/**
- * Una cita puede traer varios servicios: `citas.servicio` los guarda unidos con
- * ', ' (el flujo público permite selección múltiple desde 2026-10).
- */
+// `citas.servicio` guarda varios nombres separados por ', '.
 export function partirServicios(texto) {
   return String(texto ?? '')
     .split(',')
@@ -75,11 +72,7 @@ export function partirServicios(texto) {
     .filter(Boolean)
 }
 
-/**
- * `citas.servicio` es texto libre y casi nunca coincide con `servicios.nombre`
- * (el catálogo dice 'Corte de Cabello', las citas dicen 'Corte'). Se resuelve
- * por nombre exacto, luego por categoría exacta y luego por categoría contenida.
- */
+// Texto libre: resuelve por nombre exacto, luego categoría exacta, luego contenida.
 export function buscarServicio(nombreCita, servicios) {
   const n = normalizar(nombreCita)
   if (!n) return null
@@ -91,10 +84,7 @@ export function buscarServicio(nombreCita, servicios) {
   )
 }
 
-/**
- * Duración acumulada de TODOS los servicios de la cita. Los que no están en el
- * catálogo caen al valor por defecto, como ya pasaba con el servicio único.
- */
+// Suma la duración de todos los servicios; desconocidos usan el valor por defecto.
 export function duracionTotalCita(cita, servicios) {
   const nombres = partirServicios(cita.servicio)
   if (nombres.length === 0) return DURACION_POR_DEFECTO
@@ -104,10 +94,7 @@ export function duracionTotalCita(cita, servicios) {
   )
 }
 
-/**
- * Productos de la cita: la columna es jsonb con [{ nombre, precio }]. Puede
- * llegar como texto si alguien la insertó a mano.
- */
+// `productos` es jsonb [{ nombre, precio }], pero puede llegar como texto.
 export function productosCita(cita) {
   const bruto = cita.productos
   if (!bruto) return []

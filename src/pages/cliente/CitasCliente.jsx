@@ -66,10 +66,7 @@ export default function CitasCliente() {
   const hoy = FechaISO(reloj)
   const ahoraMin = reloj.getHours() * 60 + reloj.getMinutes()
 
-  /* ---- Cargar solo las citas del usuario logueado en ESTA barbería ----
-     RLS ya filtra por cliente_id; el .eq de barbería acota además a la
-     barbería del sitio abierto.
-     `barberos(nombre)` requiere que citas.barbero_id sea FK a barberos.id. */
+  // RLS filtra por cliente_id; el .eq acota además a la barbería del sitio abierto.
   const cargarCitas = useCallback(async () => {
     if (!userId || !barberiaId) return
     const { data, error } = await supabase
@@ -95,7 +92,6 @@ export default function CitasCliente() {
     cargarCitas()
   }, [cargarCitas])
 
-  /* ---- Horas ocupadas en el modal de reagendar ---- */
   useEffect(() => {
     if (!citaReagendar || !nuevaFecha) return
     let vigente = true

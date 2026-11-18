@@ -1,14 +1,5 @@
-// tests/unit/BarberiasSuper.test.jsx
-// Panel del proveedor del software: la lista de barberías con sus conteos,
-// los filtros, la paginación y la activación/desactivación.
-//
-// Matriz v3: F-15 «Administrar las barberías registradas». Sus dos casos:
-// CP-15-01 (el listado con nombre, slug, estado y conteos) y CP-15-02 (el
-// contador de citas de una barbería).
-//
-// ⚠ La numeración de los casos sigue a la **matriz v3**: F-15 → CP-15-01/02.
-// El archivo `Casos_de_Prueba.md` de la bóveda todavía trae la numeración
-// anterior, donde estos mismos casos son CP-13-01/CP-13-02.
+// Panel del superadmin: listado con conteos, filtros, paginación y activación (F-15: CP-15-01/02).
+// La numeración sigue la matriz v3; `Casos_de_Prueba.md` aún trae CP-13-01/02.
 
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
@@ -17,10 +8,7 @@ import { supabaseMock } from '../mocks/supabaseClient'
 import { renderWithProviders } from '../helpers/renderWithProviders'
 import BarberiasSuper from '../../src/pages/superadmin/BarberiasSuper'
 
-/**
- * Lo que devuelve la RPC `superadmin_resumen_barberias`: una fila por
- * barbería con los conteos ya agregados (el panel no hace N+1).
- */
+// Fila de `superadmin_resumen_barberias`: conteos ya agregados (sin N+1).
 const BARBERIAS = [
   {
     id: 'b1', nombre: 'Kromatik', slug: 'kromatik', activa: true,
@@ -39,7 +27,6 @@ const BARBERIAS = [
   },
 ]
 
-/** Monta el panel con las barberías de la RPC. */
 function montar({ datos = BARBERIAS, error = null } = {}) {
   supabaseMock.onRpc(
     'superadmin_resumen_barberias',
@@ -48,24 +35,17 @@ function montar({ datos = BARBERIAS, error = null } = {}) {
   return renderWithProviders(<BarberiasSuper />, { ruta: '/superadmin' })
 }
 
-/** Devuelve la fila de la tabla de una barbería. */
 function filaDe(nombre) {
   return screen.getByText(nombre).closest('tr')
 }
 
-/** Devuelve la llamada a la RPC del resumen. */
 function rpcResumen() {
   return supabaseMock.llamadas.find(
     (c) => c.tipo === 'rpc' && c.nombre === 'superadmin_resumen_barberias'
   )
 }
 
-/**
- * Devuelve la tarjeta de una métrica.
- *
- * El pie de foto de la métrica es un `<p>`; el mismo texto puede estar en otro
- * sitio (el título de la página es un `<h1>`), así que se busca el `<p>`.
- */
+// Busca el `<p>` del pie: el mismo texto también está en el `<h1>` de la página.
 function tarjetaDe(titulo) {
   const etiqueta = screen.getAllByText(titulo).find((el) => el.tagName === 'P')
   return etiqueta.closest('div.rounded-xl')
@@ -372,15 +352,8 @@ describe('BarberiasSuper · cargar y recargar (F-15)', () => {
 })
 
 describe('BarberiasSuper · abrir el sitio (F-15)', () => {
-  /**
-   * `DOMINIO_BASE` se calcula al IMPORTAR el módulo, así que hace falta
-   * importar el componente después de fijar la variable. Por eso estos dos
-   * tests no usan el import de arriba, sino uno nuevo.
-   *
-   * `vi.resetModules()` no reinstala el módulo de Supabase mockeado: el
-   * componente recién importado sigue usando la misma instancia de
-   * `supabaseMock` que el resto del archivo, así que se configura esa.
-   */
+  // `DOMINIO_BASE` se calcula al importar: estos dos tests importan el componente tras fijar la variable.
+  // `vi.resetModules()` no reinstala el mock de Supabase: se configura la misma instancia `supabaseMock`.
   async function montarConDominio(valor) {
     vi.stubEnv('VITE_DOMINIO_BASE', valor)
     vi.resetModules()

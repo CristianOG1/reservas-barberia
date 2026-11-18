@@ -1,14 +1,5 @@
 // src/pages/superadmin/BarberiaForm.jsx
-// Alta y edición de una barbería. Mismo contrato y mismas clases que los modales
-// del admin (`ServicioForm` es la referencia): label visible, `id` real,
-// `soloCampo`, foco con anillo `primary` y errores con `role="alert"`.
-//
-// - Sin `barberia` → ALTA: nombre, slug, correo del dueño y contraseña temporal.
-//   El trabajo real lo hace la Edge Function `crear-barberia`, que es la única
-//   que puede crear el usuario de auth y darle el rol: el navegador no tiene
-//   `service_role` ni puede escribir en `perfiles` (§10.5, §10.6).
-// - Con `barberia` → EDICIÓN: solo el nombre. El slug se muestra bloqueado
-//   porque es parte de la dirección del sitio.
+// Alta (vía Edge Function crear-barberia) y edición; el slug no se cambia aquí.
 import { useState } from 'react'
 import { supabase } from '../../supabaseClient'
 import { SLUG_MAX, SLUG_MIN, motivoSlugInvalido, slugDeNombre } from '../../utils/slug'

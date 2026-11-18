@@ -1,11 +1,5 @@
-// tests/unit/BarberiaProvider.test.jsx
-// Que barberia corresponde al host abierto.
-//
-// Matriz v3: F-14 «Operar con varias sucursales desde una sola cuenta» —
-// el criterio dice que «el sistema resuelve cual por el subdominio».
-// Los casos que no encajan en F-14 llevan nombre descriptivo.
-//
-// Aqui se prueba el BarberiaProvider REAL, con el cliente de Supabase mockeado.
+// BarberiaProvider REAL con Supabase mockeado: resuelve la barbería por subdominio (F-14).
+// Los casos fuera de F-14 llevan nombre descriptivo.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
@@ -35,7 +29,6 @@ function montar() {
   )
 }
 
-/** Cambia el hostname que ve `resolverSlug`. */
 function conHostname(hostname) {
   vi.stubGlobal('location', { hostname })
 }
@@ -101,10 +94,7 @@ describe('BarberiaProvider', () => {
   })
 
   it('una barberia desactivada tampoco aparece: la RLS no la deja ver', async () => {
-    // La politica "Lectura publica" de `barberias` solo deja ver las activas.
-    // Desde el navegador, una barberia de baja es indistinguible de una que
-    // no existe: la consulta vuelve vacia y el sitio dice que no esta
-    // disponible. Es el comportamiento buscado, no un fallo.
+    // "Lectura publica" solo devuelve activas: de baja e inexistente son iguales desde el navegador. Es lo buscado.
     vi.stubEnv('VITE_DOMINIO_BASE', 'gools.com.mx')
     vi.stubEnv('VITE_BARBERIA_SLUG', 'kromatik')
     conHostname('kromatik.gools.com.mx')
@@ -166,8 +156,7 @@ describe('BarberiaProvider', () => {
       resolver({ data: [{ id: 'b1', nombre: 'Salon Demo', slug: 'kromatik' }] })
     })
 
-    // El guard `if (!vigente) return` evita el aviso de React por actualizar el
-    // estado de un componente ya desmontado.
+    // `if (!vigente) return` evita avisar de actualizaciones tras desmontar.
     const avisosDeReact = errorConsola.mock.calls.filter((c) =>
       String(c[0]).toLowerCase().includes('unmounted')
     )

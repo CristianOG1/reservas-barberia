@@ -51,8 +51,7 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
     })
   }
 
-  /* ---- Validación de los datos ----
-     El teléfono se valida con la misma regla que el flujo público: 10 dígitos. */
+  // Teléfono: misma regla que el flujo público (10 dígitos).
   const validarDatos = () => {
     const errores = validarObligatorios(form, {
       nombre: 'Escribe el nombre del cliente.',
@@ -93,10 +92,7 @@ export default function CitaManualForm({ cita, servicios, barberos, onClose, onG
         notas: form.notas || null,
       }
 
-      // En alta manual la cita nace 'pendiente' de confirmar, igual que las que
-      // crea el flujo público. En edición NO se toca `estado`.
-      // La edición también va acotada por `barberia_id`: es defensa en
-      // profundidad (la RLS ya lo impide, AGENTS.md §10.5).
+      // Alta nace 'pendiente'; en edición no se toca estado. El .eq es defensa en profundidad.
       const peticion = esEdicion
         ? supabase.from('citas').update(payload).eq('id', cita.id).eq('barberia_id', barberiaId)
         : supabase.from('citas').insert([{ ...payload, estado: 'pendiente', barberia_id: barberiaId }])

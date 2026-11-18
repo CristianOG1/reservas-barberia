@@ -8,7 +8,6 @@ import { useBarberia } from '../../context/useBarberia'
 import { aMinutos } from '../../utils/formato'
 import ServicioForm from './ServicioForm'
 
-/* ===== Configuración ===== */
 
 const ITEMS_POR_PAGINA = 8
 
@@ -19,7 +18,6 @@ const COLORES_CATEGORIA = ['bg-primary', 'bg-amber', 'bg-green-600', 'bg-red-600
 
 // `duracion` es una columna TEXT: hoy guarda '30', pero el formulario aceptaba
 // '50 min'. Para promediar se extrae el primer número que aparezca.
-/* ===== Íconos ===== */
 
 function IconoExportar() {
   return (
@@ -187,7 +185,6 @@ export default function ServiciosAdmin() {
     cargarServicios()
   }
 
-  /* ---- Filtro + búsqueda ---- */
   const categorias = [...new Set(servicios.map((s) => s.categoria).filter(Boolean))]
 
   const serviciosFiltrados = servicios.filter((s) => {
@@ -197,7 +194,6 @@ export default function ServiciosAdmin() {
     return coincideBusqueda && coincideCategoria
   })
 
-  /* ---- Métricas ---- */
   const costos = servicios.map((s) => Number(s.costo)).filter(Number.isFinite)
   const tarifaPromedio = costos.length > 0
     ? Math.round(costos.reduce((a, b) => a + b, 0) / costos.length)
@@ -212,7 +208,6 @@ export default function ServiciosAdmin() {
   const duracionMin = duraciones.length > 0 ? Math.min(...duraciones) : 0
   const duracionMax = duraciones.length > 0 ? Math.max(...duraciones) : 0
 
-  /* ---- Paginación ---- */
   const totalPaginas = Math.max(1, Math.ceil(serviciosFiltrados.length / ITEMS_POR_PAGINA))
   const paginados = serviciosFiltrados.slice(
     (pagina - 1) * ITEMS_POR_PAGINA,
@@ -248,7 +243,6 @@ export default function ServiciosAdmin() {
 
   return (
     <div>
-      {/* ===== Header ===== */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-amber">
@@ -277,7 +271,6 @@ export default function ServiciosAdmin() {
         </div>
       </div>
 
-      {/* ===== Avisos ===== */}
       {errorAccion && (
         <p
           role="alert"
@@ -287,7 +280,6 @@ export default function ServiciosAdmin() {
         </p>
       )}
 
-      {/* ===== 3 métricas ===== */}
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-lg bg-primary-50 text-primary">
@@ -329,7 +321,6 @@ export default function ServiciosAdmin() {
         </div>
       </div>
 
-      {/* ===== Barra de filtros ===== */}
       <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
         <div className="relative min-w-52 flex-1">
           <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
@@ -358,7 +349,6 @@ export default function ServiciosAdmin() {
         </p>
       </div>
 
-      {/* ===== Tabla ===== */}
       {errorCarga ? (
         <div className="rounded-xl border border-red-600/30 bg-white p-5">
           <p role="alert" className="text-sm text-red-600">{errorCarga}</p>
