@@ -330,9 +330,24 @@ create policy "Admin escribe" on public.citas
 -- Reserva publica sin sesion: solo se admite si la barberia esta activa.
 drop policy if exists "Cualquiera puede agendar" on public.citas;
 create policy "Cualquiera puede agendar" on public.citas
-  for insert to anon, authenticated
+  for insert to anon
   with check (
-    exists (
+    cliente_id is null
+    and exists (
+      select 1 from public.barberias b
+      where b.id = citas.barberia_id and b.activa
+    )
+  );
+
+-- Cliente con sesion: solo agenda su propia cita en una barberia activa.
+-- rol_actual() evita que un admin use esta politica para escribir en otra barberia.
+drop policy if exists "Cliente agenda sus citas" on public.citas;
+create policy "Cliente agenda sus citas" on public.citas
+  for insert to authenticated
+  with check (
+    public.rol_actual() = 'cliente'
+    and cliente_id = auth.uid()
+    and exists (
       select 1 from public.barberias b
       where b.id = citas.barberia_id and b.activa
     )
@@ -482,13 +497,13 @@ begin
     end if;
   end if;
 
-  update public.citas
+  update public.citas c
      set fecha = p_fecha,
          hora  = p_hora
-   where id = p_id
-     and cliente_id = auth.uid()
-     and estado in ('pendiente', 'confirmada')
-     and (fecha + hora) > (now() at time zone 'America/Mexico_City');
+   where c.id = p_id
+     and c.cliente_id = auth.uid()
+     and c.estado in ('pendiente', 'confirmada')
+     and (c.fecha + c.hora) > (now() at time zone 'America/Mexico_City');
 
   if not found then
     raise exception 'cita_no_modificable';
@@ -497,11 +512,12 @@ end;
 $$;
 
 -- 8.4 asignar_barbero: primer barbero disponible sin traslape
+drop function if exists public.asignar_barbero(date, time, uuid, integer);
 create or replace function public.asignar_barbero(
-  p_fecha_consulta date,
-  p_hora_consulta  time,
-  p_barberia_id    uuid,
-  p_duracion_consulta integer default 30
+  fecha_consulta date,
+  hora_consulta  time,
+  barberia_id    uuid,
+  duracion_consulta integer default 30
 )
 returns uuid
 language sql
@@ -512,26 +528,27 @@ as $$
   select b.id
   from public.barberos b
   where b.disponible
-    and b.barberia_id = p_barberia_id
+    and b.barberia_id = asignar_barbero.barberia_id
     and not exists (
       select 1 from public.citas c
-      where c.fecha = p_fecha_consulta
-        and c.barberia_id = p_barberia_id
+      where c.fecha = asignar_barbero.fecha_consulta
+        and c.barberia_id = asignar_barbero.barberia_id
         and c.barbero_id = b.id
         and coalesce(c.estado, 'pendiente') <> 'cancelada'
-        and p_hora_consulta < (c.hora + (c.duracion_minutos || ' minutes')::interval)
-        and (p_hora_consulta + (p_duracion_consulta || ' minutes')::interval) > c.hora
+        and asignar_barbero.hora_consulta < (c.hora + (c.duracion_minutos || ' minutes')::interval)
+        and (asignar_barbero.hora_consulta + (asignar_barbero.duracion_consulta || ' minutes')::interval) > c.hora
     )
   order by b.created_at asc, b.nombre asc
   limit 1;
 $$;
 
 -- 8.5 horas_ocupadas: franjas tomadas, para pintar el calendario
+drop function if exists public.horas_ocupadas(date, uuid, uuid, integer);
 create or replace function public.horas_ocupadas(
-  p_fecha_consulta date,
-  p_barberia_id     uuid,
-  p_barbero_id      uuid default null,
-  p_duracion_consulta integer default 30
+  fecha_consulta date,
+  barberia_id     uuid,
+  barbero_id      uuid default null,
+  duracion_consulta integer default 30
 )
 returns setof time
 language sql
@@ -545,13 +562,13 @@ as $$
        jsonb_array_elements(cf.bloques_horario) as bloque(obj),
        jsonb_array_elements_text(bloque.obj -> 'horas') as h,
        public.citas c
-  where cf.barberia_id = p_barberia_id
-    and c.fecha = p_fecha_consulta
-    and c.barberia_id = p_barberia_id
-    and c.barbero_id = p_barbero_id
+  where cf.barberia_id = horas_ocupadas.barberia_id
+    and c.fecha = horas_ocupadas.fecha_consulta
+    and c.barberia_id = horas_ocupadas.barberia_id
+    and c.barbero_id = horas_ocupadas.barbero_id
     and coalesce(c.estado, 'pendiente') <> 'cancelada'
     and h::time < (c.hora + (c.duracion_minutos || ' minutes')::interval)
-    and (h::time + (p_duracion_consulta || ' minutes')::interval) > c.hora
+    and (h::time + (horas_ocupadas.duracion_consulta || ' minutes')::interval) > c.hora
 
   union
 
@@ -560,20 +577,20 @@ as $$
   from public.configuracion cf,
        jsonb_array_elements(cf.bloques_horario) as bloque(obj),
        jsonb_array_elements_text(bloque.obj -> 'horas') as h
-  where p_barbero_id is null
-    and cf.barberia_id = p_barberia_id
+  where horas_ocupadas.barbero_id is null
+    and cf.barberia_id = horas_ocupadas.barberia_id
     and not exists (
       select 1 from public.barberos b
       where b.disponible
-        and b.barberia_id = p_barberia_id
+        and b.barberia_id = horas_ocupadas.barberia_id
         and not exists (
           select 1 from public.citas c
-          where c.fecha = p_fecha_consulta
-            and c.barberia_id = p_barberia_id
+          where c.fecha = horas_ocupadas.fecha_consulta
+            and c.barberia_id = horas_ocupadas.barberia_id
             and c.barbero_id = b.id
             and coalesce(c.estado, 'pendiente') <> 'cancelada'
             and h::time < (c.hora + (c.duracion_minutos || ' minutes')::interval)
-            and (h::time + (p_duracion_consulta || ' minutes')::interval) > c.hora
+            and (h::time + (horas_ocupadas.duracion_consulta || ' minutes')::interval) > c.hora
         )
     );
 $$;
